@@ -1,0 +1,12 @@
+{
+  "name": "monitoring-sdk",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  }
+}
