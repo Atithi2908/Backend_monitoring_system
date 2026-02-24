@@ -18,7 +18,7 @@ export function apiKeyAuth(
     return res.status(403).json({ error: "Invalid API key" });
   }
 
-  // Attach projectId to request (backend-owned data)
+  
   (req as any).projectId = projectId;
 
   next();

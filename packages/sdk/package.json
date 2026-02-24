@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
   "dependencies": {
     "shared-types": "workspace:*"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6"
+    "@types/express": "^5.0.6",
+    "typescript": "^5.3.3"
   }
 }

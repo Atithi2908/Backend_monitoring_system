@@ -1,15 +1,14 @@
+import "dotenv/config";
 import express from "express";
 import { collectRouter } from "./routes/collect";
-
+import { metricsDebugRouter } from "./routes/metricdebug";
+import { startAggregationJob } from "./jobs/aggregation";
 const app = express();
-
-// allows JSON body
 app.use(express.json());
-
-// mount collect route
 app.use("/collect", collectRouter);
-
+app.use("/", metricsDebugRouter);
 const PORT = 4000;
 app.listen(PORT, () => {
   console.log(`Collector running on port ${PORT}`);
+  startAggregationJob();
 });
