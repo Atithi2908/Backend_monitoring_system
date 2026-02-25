@@ -3,6 +3,8 @@ import { runSystemAggregation } from "../services/aggregation/systemAggregator";
 import { runRequestAggregation } from "../services/aggregation/requestAggregator";
 import { runSystemHourAggregation } from "../services/aggregation/systemAggregatorHour";
 import { runRequestHourAggregation } from "../services/aggregation/requestAggregatorHour";
+import { runSystemDayAggregation } from "../services/aggregation/systemAggregatorDay";
+import { runRequestDayAggregation } from "../services/aggregation/requestAggregatorDay";
 
 export function startAggregationJob() {
   console.log("Starting aggregation cron job...");
@@ -26,4 +28,14 @@ export function startAggregationJob() {
       console.error("Hour aggregation error:", error);
     }
   });
+  cron.schedule("0 0 * * *", async () => {
+  console.log("Running day aggregation...");
+
+  try {
+    await runSystemDayAggregation();
+    await runRequestDayAggregation();
+  } catch (error) {
+    console.error("Day aggregation error:", error);
+  }
+});
 }
