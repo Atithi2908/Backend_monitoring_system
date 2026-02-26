@@ -1,36 +1,56 @@
-import express, { Request, Response } from "express";
-import {
-  monitorMiddleware,
-  startSystemMetrics
-} from "monitoring-sdk";
+import express, { Request, Response, NextFunction } from "express";
+import { monitorMiddleware, startSystemMetrics } from "monitoring-sdk";
+import dotenv from "dotenv";
+
+
+dotenv.config();
+
+const PORT = process.env.PORT || "3001";
+const MONITORING_URL = process.env.MONITORING_URL || "http://localhost:3000/collect";
+const MONITORING_API_KEY = process.env.MONITORING_API_KEY || "";
+const SERVICE_NAME = process.env.SERVICE_NAME || "test-app";
+
+if (!MONITORING_API_KEY) {
+  console.error("Error: MONITORING_API_KEY is required");
+  process.exit(1);
+}
 
 const app = express();
+
 startSystemMetrics(
   {
-    serviceName: "test-service",
-    collectorUrl: "http://localhost:4000/collect",
-    apiKey: "abc123"
+    serviceName: SERVICE_NAME,
+    collectorUrl: MONITORING_URL,
+    apiKey: MONITORING_API_KEY,
   },
-  5000 
+  5000
 );
 
-app.use(
-  monitorMiddleware({
-    serviceName: "test-service",
-    collectorUrl: "http://localhost:4000/collect",
-    apiKey: "abc123"
-  })
-);
+
+const middleware = monitorMiddleware({
+  serviceName: SERVICE_NAME,
+  collectorUrl: MONITORING_URL,
+  apiKey: MONITORING_API_KEY,
+});
+app.use((req: Request, res: Response, next: NextFunction) => middleware(req, res, next));
+
 
 app.get("/ping", (req: Request, res: Response) => {
   res.json({ message: "pong" });
 });
 
 app.get("/slow", async (req: Request, res: Response) => {
-  await new Promise(r => setTimeout(r, 800));
+  await new Promise((resolve) => setTimeout(resolve, 800));
   res.send("slow response");
 });
 
-app.listen(3001, () => {
-  console.log("Test app running on port 3001");
+app.get("/error", (req: Request, res: Response) => {
+  res.status(500).json({ error: "Internal Server Error" });
+});
+
+app.listen(Number(PORT), () => {
+  console.log(`✓ Test app running on port ${PORT}`);
+  console.log(`✓ Service: ${SERVICE_NAME}`);
+  console.log(`✓ Monitoring URL: ${MONITORING_URL}`);
+  console.log(`✓ System metrics collecting every 5s`);
 });

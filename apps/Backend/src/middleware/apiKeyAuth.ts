@@ -1,25 +1,32 @@
 import { Request, Response, NextFunction } from "express";
-import { apiKeyToProjectMap } from "../storage/apiKeys.store";
+import { prisma } from "../config/database";
 
-export function apiKeyAuth(
+export async function validateApiKey(
   req: Request,
   res: Response,
   next: NextFunction
 ) {
-  const apiKey = req.header("x-api-key");
+  try {
+    const apiKey = req.header("x-api-key");
 
-  if (!apiKey) {
-    return res.status(401).json({ error: "API key missing" });
+    if (!apiKey) {
+      return res.status(401).json({ error: "API key missing" });
+    }
+
+    const keyRecord = await prisma.apiKey.findUnique({
+      where: { key: apiKey },
+    });
+
+    if (!keyRecord || !keyRecord.isActive) {
+      return res.status(401).json({ error: "Invalid API key" });
+    }
+
+    
+    (req as any).projectId = keyRecord.projectId;
+
+    next();
+  } catch (error) {
+    console.error("API key validation error:", error);
+    return res.status(500).json({ error: "API key validation failed" });
   }
-
-  const projectId = apiKeyToProjectMap.get(apiKey);
-
-  if (!projectId) {
-    return res.status(403).json({ error: "Invalid API key" });
-  }
-
-  
-  (req as any).projectId = projectId;
-
-  next();
 }

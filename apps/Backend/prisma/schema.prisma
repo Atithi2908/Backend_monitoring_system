@@ -8,7 +8,50 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now())
+  
+  projects  Project[]
+}
 
+model ApiKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  projectId String
+  createdAt DateTime @default(now())
+  isActive  Boolean  @default(true)
+
+  project   Project  @relation(fields: [projectId], references: [id])
+}
+
+model Project {
+  id       String @id
+  name     String
+  apiKey   String
+  userId   String?
+  createdAt DateTime @default(now())
+  
+  user     User?     @relation(fields: [userId], references: [id])
+  services  Service[]
+  apiKeys   ApiKey[]
+  
+  @@unique([userId, name])
+}
+
+model Service {
+  id        String   @id @default(cuid())
+  name      String
+  projectId String
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, name])
+}
 model RequestMetric {
   id          BigInt   @id @default(autoincrement())
 

@@ -15,6 +15,21 @@ export const collectMetric = async (req: Request, res: Response) => {
     const projectId = (req as any).projectId;
 
     
+    await prisma.service.upsert({
+      where: {
+        projectId_name: {
+          projectId: projectId,
+          name: metric.serviceName,
+        },
+      },
+      update: {},
+      create: {
+        id: crypto.randomUUID(),
+        name: metric.serviceName,
+        projectId: projectId,
+      },
+    });
+
     if (metric.type === MetricType.REQUEST) {
       await prisma.requestMetric.create({
         data: {
