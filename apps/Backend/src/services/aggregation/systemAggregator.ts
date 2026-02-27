@@ -10,7 +10,7 @@ export async function runSystemAggregation() {
   const bucketStart = currentMinuteStart - ONE_MINUTE;
   const bucketEnd = currentMinuteStart;
 
-  console.log("System aggregation for:", new Date(bucketStart));
+  //console.log("System aggregation for:", new Date(bucketStart));
 
   const rawMetrics = await prisma.systemMetric.findMany({
     where: {

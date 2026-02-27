@@ -29,13 +29,13 @@ export function startAggregationJob() {
     }
   });
   cron.schedule("0 0 * * *", async () => {
-  console.log("Running day aggregation...");
+ // console.log("Running day aggregation...");
 
   try {
     await runSystemDayAggregation();
     await runRequestDayAggregation();
   } catch (error) {
-    console.error("Day aggregation error:", error);
+    //console.error("Day aggregation error:", error);
   }
 });
 }

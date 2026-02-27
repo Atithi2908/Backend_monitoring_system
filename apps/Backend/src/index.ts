@@ -7,6 +7,7 @@ import { startAggregationJob } from "./jobs/aggregation";
 import { metricsRouter } from "./routes/getMetrics";
 import setupRouter from "./routes/setup";
 import authRouter from "./routes/auth";
+import projectRouter from "./routes/project";
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(cors({
 app.use(express.json());
 
 app.use("/auth", authRouter);
+app.use("/projects", projectRouter);
 app.use("/collect", collectRouter);
 app.use("/", metricsDebugRouter);
 app.use("/metrics", metricsRouter);

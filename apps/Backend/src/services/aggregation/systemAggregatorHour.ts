@@ -13,9 +13,9 @@ export async function runSystemHourAggregation() {
   const bucketStart = currentHourStart - ONE_HOUR;
   const bucketEnd = currentHourStart;
 
-  console.log("System hour aggregation for:", new Date(bucketStart));
-  console.log("Bucket Start:", new Date(bucketStart));
-  console.log("Bucket End:", new Date(bucketEnd));
+  //console.log("System hour aggregation for:", new Date(bucketStart));
+  //console.log("Bucket Start:", new Date(bucketStart));
+  //console.log("Bucket End:", new Date(bucketEnd));
 
 
   const minuteMetrics =
@@ -29,7 +29,7 @@ export async function runSystemHourAggregation() {
     });
 
   if (minuteMetrics.length === 0) {
-    console.log("No system minute data found for this hour.");
+   // console.log("No system minute data found for this hour.");
     return;
   }
 
@@ -88,5 +88,5 @@ export async function runSystemHourAggregation() {
     });
   }
 
-  console.log("System hour aggregation complete.");
+ // console.log("System hour aggregation complete.");
 }

@@ -29,22 +29,26 @@ model ApiKey {
 }
 
 model Project {
-  id       String @id
-  name     String
-  apiKey   String
-  userId   String?
-  createdAt DateTime @default(now())
-  
-  user     User?     @relation(fields: [userId], references: [id])
-  services  Service[]
-  apiKeys   ApiKey[]
-  
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  region      String   @default("US-EAST-1")
+  status      String   @default("ACTIVE")
+
+  userId      String?
+  createdAt   DateTime @default(now())
+  user        User?     @relation(fields: [userId], references: [id])
+  services    Service[]
+  apiKeys     ApiKey[]
+
   @@unique([userId, name])
 }
 
 model Service {
   id        String   @id @default(cuid())
   name      String
+  status    String   @default("ACTIVE")
+  uptime    Float    @default(100)
   projectId String
   createdAt DateTime @default(now())
 

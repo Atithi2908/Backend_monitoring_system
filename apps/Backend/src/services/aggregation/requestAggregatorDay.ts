@@ -12,7 +12,7 @@ export async function runRequestDayAggregation() {
   const bucketStart = currentDayStart - ONE_DAY;
   const bucketEnd = currentDayStart;
 
-  console.log("Day aggregation for:", new Date(bucketStart));
+  //console.log("Day aggregation for:", new Date(bucketStart));
 
   const hourMetrics =
     await prisma.requestMetricAggregateHour.findMany({
@@ -108,5 +108,5 @@ export async function runRequestDayAggregation() {
     });
   }
 
-  console.log("Request day aggregation complete.");
+  //console.log("Request day aggregation complete.");
 }

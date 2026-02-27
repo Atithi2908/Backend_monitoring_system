@@ -20,7 +20,7 @@ const LandingPage: React.FC = () => {
     try {
       await login(email, password);
       setShowAuthModal(false);
-      navigate('/dashboard');
+      navigate('/home');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -36,7 +36,7 @@ const LandingPage: React.FC = () => {
     try {
       await signup(email, password, name);
       setShowAuthModal(false);
-      navigate('/dashboard');
+      navigate('/home');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -123,13 +123,13 @@ const LandingPage: React.FC = () => {
 
             <div className="flex flex-wrap gap-4">
               <button 
-                onClick={() => navigate('/dashboard')}
+                onClick={() => navigate('/home')}
                 className="bg-ink text-white px-8 py-4 text-base font-bold uppercase tracking-wide shadow-hard hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
               >
-                View Dashboard
+                View Home
               </button>
               <button 
-                onClick={() => navigate('/dashboard')}
+                onClick={() => navigate('/home')}
                 className="bg-white text-ink px-8 py-4 text-base font-bold uppercase tracking-wide shadow-hard border-2 border-ink hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
               >
                 Explore API
@@ -455,7 +455,7 @@ const LandingPage: React.FC = () => {
             <button 
               onClick={() => {
                 setShowAuthModal(false);
-                navigate('/dashboard');
+                navigate('/home');
               }}
               className="w-full bg-ink text-white px-6 py-4 text-sm font-bold uppercase tracking-wide shadow-hard hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all mb-6 flex items-center justify-center gap-3"
             >

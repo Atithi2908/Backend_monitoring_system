@@ -8,9 +8,9 @@ export async function runRequestHourAggregation() {
     const bucketStart = currentHourStart - ONE_HOUR;
     const bucketEnd = currentHourStart;
 
-  console.log("Hour aggregation for:", new Date(bucketStart));
-  console.log("Bucket Start:", new Date(bucketStart));
-  console.log("Bucket End:", new Date(bucketEnd));
+ // console.log("Hour aggregation for:", new Date(bucketStart));
+  //console.log("Bucket Start:", new Date(bucketStart));
+ // console.log("Bucket End:", new Date(bucketEnd));
   const minuteMetrics = await prisma.requestMetricAggregate.findMany({
     where: {
       minuteBucket: {
@@ -20,7 +20,7 @@ export async function runRequestHourAggregation() {
     },
   });   
   if(minuteMetrics.length === 0) {
-    console.log("No minute metrics found for this hour.");
+    //console.log("No minute metrics found for this hour.");
     return;
   }
 const grouped = new Map<string, typeof minuteMetrics>();
@@ -103,6 +103,6 @@ for (const metrics of grouped.values()) {
     });
   }
 
-  console.log("Hour request aggregation complete.");
+  //console.log("Hour request aggregation complete.");
 
 }
