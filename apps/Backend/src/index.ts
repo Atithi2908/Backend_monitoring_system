@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cors from "cors";
 import { collectRouter } from "./routes/collect";
 import { metricsDebugRouter } from "./routes/metricdebug";
 import { startAggregationJob } from "./jobs/aggregation";
@@ -8,6 +9,13 @@ import setupRouter from "./routes/setup";
 import authRouter from "./routes/auth";
 
 const app = express();
+
+// Enable CORS for frontend
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://localhost:3000'], // Add your production domain here
+  credentials: true,
+}));
+
 app.use(express.json());
 
 app.use("/auth", authRouter);

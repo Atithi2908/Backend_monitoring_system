@@ -30,16 +30,31 @@ export async function createProject(req: AuthRequest, res: Response) {
     }
 
     const apiKey = generateApiKey();
-    const project = await prisma.project.create({
-      data: { 
-        name,
-        id: crypto.randomUUID(),
-        apiKey,
-        userId,
-      },
-    });
+    const projectId = crypto.randomUUID();
 
-    return res.json(project);
+    // Create project and its primary API key in a transaction
+    const [project, primaryApiKey] = await prisma.$transaction([
+      prisma.project.create({
+        data: { 
+          name,
+          id: projectId,
+          apiKey,
+          userId,
+        },
+      }),
+      prisma.apiKey.create({
+        data: {
+          key: apiKey,
+          projectId: projectId,
+          isActive: true,
+        },
+      }),
+    ]);
+
+    return res.json({
+      ...project,
+      message: "Project created with primary API key",
+    });
   } catch (error) {
     console.error("Create project error:", error);
     return res.status(500).json({ error: "Failed to create project" });

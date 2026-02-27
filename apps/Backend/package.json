@@ -5,12 +5,15 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "ts-node -r dotenv/config src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "check": "ts-node -r dotenv/config src/utils/checkDatabase.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^6.0.1",
+    "@types/cors": "^2.8.19",
     "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
