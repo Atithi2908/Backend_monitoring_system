@@ -30,13 +30,15 @@ function serializeBigInt(obj: any): any {
 
 export async function getRequestMetrics(req: Request, res: Response) {
   try {
-    const { projectId, serviceName, from, to } = req.query;
+    const { projectId, serviceName, from, to, method, endpoint } = req.query;
 
     if (!projectId || !serviceName || !from || !to) {
       return res.status(400).json({ error: "Missing required query params" });
     }
 
     const range = Number(to) - Number(from);
+    const methodFilter = typeof method === "string" && method.trim() ? method.trim() : undefined;
+    const endpointFilter = typeof endpoint === "string" && endpoint.trim() ? endpoint.trim() : undefined;
 
     let data;
     if (range <= ONE_HOUR) {
@@ -44,6 +46,8 @@ export async function getRequestMetrics(req: Request, res: Response) {
         where: {
           projectId: String(projectId),
           serviceName: String(serviceName),
+          ...(methodFilter ? { method: methodFilter } : {}),
+          ...(endpointFilter ? { route: endpointFilter } : {}),
           minuteBucket: {
             gte: BigInt(from as string),
             lte: BigInt(to as string),
@@ -56,6 +60,8 @@ export async function getRequestMetrics(req: Request, res: Response) {
         where: {
           projectId: String(projectId),
           serviceName: String(serviceName),
+          ...(methodFilter ? { method: methodFilter } : {}),
+          ...(endpointFilter ? { route: endpointFilter } : {}),
           hourBucket: {
             gte: BigInt(from as string),
             lte: BigInt(to as string),
@@ -68,6 +74,8 @@ export async function getRequestMetrics(req: Request, res: Response) {
         where: {
           projectId: String(projectId),
           serviceName: String(serviceName),
+          ...(methodFilter ? { method: methodFilter } : {}),
+          ...(endpointFilter ? { route: endpointFilter } : {}),
           dayBucket: {
             gte: BigInt(from as string),
             lte: BigInt(to as string),

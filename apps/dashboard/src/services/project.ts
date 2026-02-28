@@ -71,6 +71,11 @@ export interface RequestMetricPoint {
   dayBucket?: string | number;
 }
 
+export interface RequestMetricsFilters {
+  method?: string;
+  endpoint?: string;
+}
+
 // Get all projects for user
 export async function getProjects(): Promise<Project[]> {
   const token = getToken();
@@ -260,7 +265,8 @@ export async function getRequestMetrics(
   projectId: string,
   serviceName: string,
   from: number,
-  to: number
+  to: number,
+  filters?: RequestMetricsFilters
 ): Promise<RequestMetricPoint[]> {
   const token = getToken();
   if (!token) throw new Error('Not authenticated');
@@ -271,6 +277,14 @@ export async function getRequestMetrics(
     from: String(from),
     to: String(to),
   });
+
+  if (filters?.method) {
+    params.set('method', filters.method);
+  }
+
+  if (filters?.endpoint) {
+    params.set('endpoint', filters.endpoint);
+  }
 
   const response = await fetch(`${API_BASE_URL}/metrics/request?${params.toString()}`, {
     headers: { 'Authorization': `Bearer ${token}` },
