@@ -7,6 +7,35 @@ const PROJECT_STATUSES = ["ACTIVE", "DEGRADED", "INACTIVE"] as const;
 const PROJECT_REGIONS = ["US-EAST-1", "US-WEST-2", "EU-WEST-1", "AP-SOUTH-1"] as const;
 const SERVICE_STATUSES = ["ACTIVE", "DEGRADED", "INACTIVE"] as const;
 
+async function resolveEffectiveUserId(req: AuthRequest): Promise<string | null> {
+  const userIdFromToken = req.userId;
+  const userEmailFromToken = req.userEmail;
+
+  if (userIdFromToken) {
+    const userById = await prisma.user.findUnique({
+      where: { id: userIdFromToken },
+      select: { id: true },
+    });
+
+    if (userById) {
+      return userById.id;
+    }
+  }
+
+  if (userEmailFromToken) {
+    const userByEmail = await prisma.user.findUnique({
+      where: { email: userEmailFromToken },
+      select: { id: true },
+    });
+
+    if (userByEmail) {
+      return userByEmail.id;
+    }
+  }
+
+  return null;
+}
+
 export async function createProject(req: AuthRequest, res: Response) {
   try {
     const { name, description, region, status } = req.body;
@@ -111,7 +140,7 @@ export async function createProject(req: AuthRequest, res: Response) {
 export async function createApiKey(req: AuthRequest, res: Response) {
   try {
     const { projectId } = req.params;
-    const userId = req.userId;
+    const userId = await resolveEffectiveUserId(req);
 
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -132,16 +161,28 @@ export async function createApiKey(req: AuthRequest, res: Response) {
 
     const key = generateApiKey();
 
-    const apiKey = await prisma.apiKey.create({
-      data: {
-        key,
-        projectId,
-      },
-    });
+    const [, apiKey] = await prisma.$transaction([
+      prisma.apiKey.updateMany({
+        where: {
+          projectId,
+          isActive: true,
+        },
+        data: {
+          isActive: false,
+        },
+      }),
+      prisma.apiKey.create({
+        data: {
+          key,
+          projectId,
+          isActive: true,
+        },
+      }),
+    ]);
 
     return res.json({
       message: "API key created successfully",
-      apiKey: key,
+      apiKey: apiKey.key,
     });
   } catch (error) {
     console.error("Create API key error:", error);
@@ -152,7 +193,7 @@ export async function createApiKey(req: AuthRequest, res: Response) {
 export async function createService(req: AuthRequest, res: Response) {
   try {
     const { projectId, serviceName, status, uptime } = req.body;
-    const userId = req.userId;
+    const userId = await resolveEffectiveUserId(req);
 
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });

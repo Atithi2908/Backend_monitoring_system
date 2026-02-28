@@ -4,10 +4,39 @@ import { AuthRequest } from "../middleware/jwtAuth";
 
 const PROJECT_STATUSES = ["ACTIVE", "DEGRADED", "INACTIVE"] as const;
 
+async function resolveEffectiveUserId(req: AuthRequest): Promise<string | null> {
+  const userIdFromToken = req.userId;
+  const userEmailFromToken = req.userEmail;
+
+  if (userIdFromToken) {
+    const userById = await prisma.user.findUnique({
+      where: { id: userIdFromToken },
+      select: { id: true },
+    });
+
+    if (userById) {
+      return userById.id;
+    }
+  }
+
+  if (userEmailFromToken) {
+    const userByEmail = await prisma.user.findUnique({
+      where: { email: userEmailFromToken },
+      select: { id: true },
+    });
+
+    if (userByEmail) {
+      return userByEmail.id;
+    }
+  }
+
+  return null;
+}
+
 // Get all projects for authenticated user
 export async function getUserProjects(req: AuthRequest, res: Response) {
   try {
-    const userId = req.userId;
+    const userId = await resolveEffectiveUserId(req);
 
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -38,7 +67,7 @@ export async function getUserProjects(req: AuthRequest, res: Response) {
 // Get single project details
 export async function getProjectDetails(req: AuthRequest, res: Response) {
   try {
-    const userId = req.userId;
+    const userId = await resolveEffectiveUserId(req);
     const { projectId } = req.params;
 
     if (!userId) {
@@ -54,6 +83,8 @@ export async function getProjectDetails(req: AuthRequest, res: Response) {
         services: true,
         apiKeys: {
           where: { isActive: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
         },
       },
     });
@@ -72,7 +103,7 @@ export async function getProjectDetails(req: AuthRequest, res: Response) {
 // Get services for a project
 export async function getProjectServices(req: AuthRequest, res: Response) {
   try {
-    const userId = req.userId;
+    const userId = await resolveEffectiveUserId(req);
     const { projectId } = req.params;
 
     if (!userId) {
@@ -106,7 +137,7 @@ export async function getProjectServices(req: AuthRequest, res: Response) {
 // Delete project
 export async function deleteProject(req: AuthRequest, res: Response) {
   try {
-    const userId = req.userId;
+    const userId = await resolveEffectiveUserId(req);
     const { projectId } = req.params;
 
     if (!userId) {
@@ -139,7 +170,7 @@ export async function deleteProject(req: AuthRequest, res: Response) {
 
 export async function updateProjectStatus(req: AuthRequest, res: Response) {
   try {
-    const userId = req.userId;
+    const userId = await resolveEffectiveUserId(req);
     const { projectId } = req.params;
     const { status } = req.body;
 
@@ -168,7 +199,7 @@ export async function updateProjectStatus(req: AuthRequest, res: Response) {
     const updatedProject = await prisma.project.update({
       where: { id: projectId },
       data: { status: normalizedStatus },
-    });
+    }); 
 
     return res.json({
       message: "Project status updated successfully",

@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import LandingPage from './pages/LandingPage';
 import HomePage from './pages/HomePage';
 import Home from './pages/Dashboard';
+import ProjectDashboard from './pages/ProjectDashboard';
+import ServiceMetricsPage from './pages/ServiceMetricsPage';
 
 function App() {
   return (
@@ -11,6 +13,8 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/home-landing" element={<HomePage />} />
         <Route path="/home" element={<Home />} />
+        <Route path="/dashboard/:projectId" element={<ProjectDashboard />} />
+        <Route path="/dashboard/:projectId/service/:serviceName" element={<ServiceMetricsPage />} />
         <Route path="/dashboard" element={<Navigate to="/home" replace />} />
       </Routes>
     </Router>

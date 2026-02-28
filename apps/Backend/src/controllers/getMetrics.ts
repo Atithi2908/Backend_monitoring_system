@@ -4,6 +4,30 @@ import { prisma } from "../config/database";
 const ONE_HOUR = 60 * 60 * 1000;
 const TWO_DAYS = 48 * ONE_HOUR;
 
+function serializeBigInt(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (typeof obj === "bigint") {
+    return obj.toString();
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(serializeBigInt);
+  }
+
+  if (typeof obj === "object") {
+    const serialized: any = {};
+    for (const key in obj) {
+      serialized[key] = serializeBigInt(obj[key]);
+    }
+    return serialized;
+  }
+
+  return obj;
+}
+
 export async function getRequestMetrics(req: Request, res: Response) {
   try {
     const { projectId, serviceName, from, to } = req.query;
@@ -53,7 +77,7 @@ export async function getRequestMetrics(req: Request, res: Response) {
       });
     }
 
-    return res.json(data);
+    return res.json(serializeBigInt(data));
   } catch (error) {
     console.error("Request metrics error:", error);
     return res.status(500).json({ error: "Internal server error" });
@@ -92,13 +116,13 @@ export async function getSystemMetrics(req: Request, res: Response) {
       });
 
       return res.json(
-        rawData.map((row) => ({
+        serializeBigInt(rawData.map((row) => ({
           bucket: row.minuteBucket,
           avgCpu: row.avgCpu,
           maxCpu: row.maxCpu,
           avgMemoryMb: row.avgMemoryMb,
           maxMemoryMb: row.maxMemoryMb,
-        }))
+        })))
       );
     }
 
@@ -116,13 +140,13 @@ export async function getSystemMetrics(req: Request, res: Response) {
       });
 
       return res.json(
-        rawData.map((row) => ({
+        serializeBigInt(rawData.map((row) => ({
           bucket: row.hourBucket,
           avgCpu: row.avgCpu,
           maxCpu: row.maxCpu,
           avgMemoryMb: row.avgMemoryMb,
           maxMemoryMb: row.maxMemoryMb,
-        }))
+        })))
       );
     }
 
@@ -140,13 +164,13 @@ export async function getSystemMetrics(req: Request, res: Response) {
     });
 
     return res.json(
-      rawData.map((row) => ({
+      serializeBigInt(rawData.map((row) => ({
         bucket: row.dayBucket,
         avgCpu: row.avgCpu,
         maxCpu: row.maxCpu,
         avgMemoryMb: row.avgMemoryMb,
         maxMemoryMb: row.maxMemoryMb,
-      }))
+      })))
     );
   } catch (error) {
     console.error("System metrics error:", error);

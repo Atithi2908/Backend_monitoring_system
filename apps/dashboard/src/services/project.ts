@@ -10,10 +10,19 @@ export interface Project {
   status: string;
   userId: string;
   createdAt: string;
+  apiKeys?: ApiKey[];
   services?: Service[];
   _count?: {
     services: number;
   };
+}
+
+export interface ApiKey {
+  id: string;
+  key: string;
+  projectId: string;
+  createdAt: string;
+  isActive: boolean;
 }
 
 export interface Service {
@@ -37,6 +46,29 @@ export interface CreateServiceInput {
   serviceName: string;
   status: string;
   uptime: number;
+}
+
+export interface SystemMetricPoint {
+  bucket: string | number;
+  avgCpu: number;
+  maxCpu: number;
+  avgMemoryMb: number;
+  maxMemoryMb: number;
+}
+
+export interface RequestMetricPoint {
+  route: string;
+  method: string;
+  totalRequests: number;
+  successCount: number;
+  clientErrorCount: number;
+  serverErrorCount: number;
+  avgResponseTime: number;
+  maxResponseTime: number;
+  p95ResponseTime: number;
+  minuteBucket?: string | number;
+  hourBucket?: string | number;
+  dayBucket?: string | number;
 }
 
 // Get all projects for user
@@ -174,4 +206,80 @@ export async function updateProjectStatus(projectId: string, status: string): Pr
 
   const data = await response.json();
   return data.project;
+}
+
+export async function createProjectApiKey(projectId: string): Promise<string> {
+  const token = getToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch(`${API_BASE_URL}/create/apikey/${projectId}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to create API key');
+  }
+
+  const data = await response.json();
+  return data.apiKey;
+}
+
+export async function getSystemMetrics(
+  projectId: string,
+  serviceName: string,
+  from: number,
+  to: number
+): Promise<SystemMetricPoint[]> {
+  const token = getToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const params = new URLSearchParams({
+    projectId,
+    serviceName,
+    from: String(from),
+    to: String(to),
+  });
+
+  const response = await fetch(`${API_BASE_URL}/metrics/system?${params.toString()}`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to fetch system metrics');
+  }
+
+  return await response.json();
+}
+
+export async function getRequestMetrics(
+  projectId: string,
+  serviceName: string,
+  from: number,
+  to: number
+): Promise<RequestMetricPoint[]> {
+  const token = getToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const params = new URLSearchParams({
+    projectId,
+    serviceName,
+    from: String(from),
+    to: String(to),
+  });
+
+  const response = await fetch(`${API_BASE_URL}/metrics/request?${params.toString()}`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to fetch request metrics');
+  }
+
+  return await response.json();
 }
