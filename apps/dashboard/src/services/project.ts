@@ -66,6 +66,7 @@ export interface RequestMetricPoint {
   avgResponseTime: number;
   maxResponseTime: number;
   p95ResponseTime: number;
+  p99ResponseTime?: number;
   minuteBucket?: string | number;
   hourBucket?: string | number;
   dayBucket?: string | number;

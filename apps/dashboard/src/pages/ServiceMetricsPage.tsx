@@ -17,6 +17,10 @@ type TimeSeriesPoint = {
   ts: number;
   value: number | null;
   secondaryValue?: number | null;
+  tertiaryValue?: number | null;
+  compareValue?: number | null;
+  compareSecondaryValue?: number | null;
+  compareTertiaryValue?: number | null;
 };
 
 const TIME_WINDOW_CONFIG: Record<TimeWindow, { label: string; windowMs: number; subtitle: string }> = {
@@ -184,7 +188,8 @@ function niceStep(rawStep: number): number {
 function buildNiceYAxis(
   values: number[],
   mode: 'auto' | 'percent' | 'uptime',
-  unit: UnitType
+  unit: UnitType,
+  startAtZero = false
 ): { min: number; max: number; ticks: number[] } {
   if (mode === 'percent') {
     return { min: 0, max: 100, ticks: [0, 20, 40, 60, 80, 100] };
@@ -216,8 +221,16 @@ function buildNiceYAxis(
   }
 
   const range = rawMax - rawMin;
-  const paddedMax = rawMax + range * 0.12;
-  const paddedMin = unit === 'requests' ? 0 : rawMin - range * 0.05;
+  const paddedMax = rawMax + range * 0.15;
+  let paddedMin = rawMin - range * 0.1;
+
+  if (startAtZero || unit === 'requests') {
+    paddedMin = 0;
+  }
+
+  if (!startAtZero && unit !== 'requests' && rawMin >= 0) {
+    paddedMin = Math.max(0, paddedMin);
+  }
 
   const targetTicks = 6;
   const step = niceStep((paddedMax - paddedMin) / (targetTicks - 1));
@@ -241,11 +254,20 @@ const VolumeTimeChart: React.FC<{
   from: number;
   to: number;
   tone?: 'primary' | 'ink';
+  chartType?: 'line' | 'area';
   yMode?: 'auto' | 'percent' | 'uptime';
+  yStartAtZero?: boolean;
   showSecondaryLine?: boolean;
   secondaryLabel?: string;
+  showTertiaryLine?: boolean;
+  tertiaryLabel?: string;
   thresholdLine?: { value: number; label: string };
+  shadeAboveThreshold?: boolean;
+  thresholdCapacityLabel?: string;
+  thresholdAffectsSeriesColor?: boolean;
   tooltipTotalLabel?: string;
+  showPeakMarker?: boolean;
+  peakLabelPrefix?: string;
 }> = ({
   title,
   yLabel,
@@ -255,14 +277,24 @@ const VolumeTimeChart: React.FC<{
   from,
   to,
   tone = 'primary',
+  chartType = 'line',
   yMode = 'auto',
+  yStartAtZero = false,
   showSecondaryLine = false,
   secondaryLabel = 'Secondary',
+  showTertiaryLine = false,
+  tertiaryLabel = 'Tertiary',
   thresholdLine,
+  shadeAboveThreshold = false,
+  thresholdCapacityLabel,
+  thresholdAffectsSeriesColor = false,
   tooltipTotalLabel,
+  showPeakMarker = false,
+  peakLabelPrefix = 'Peak',
 }) => {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [panRatio, setPanRatio] = useState<number>(1);
 
   const clampZoom = (value: number) => {
     return Math.max(1, Math.min(8, value));
@@ -270,33 +302,43 @@ const VolumeTimeChart: React.FC<{
 
   useEffect(() => {
     setZoomLevel(1);
+    setPanRatio(1);
     setHoveredIndex(null);
   }, [from, to, timeWindow]);
 
-  const visibleSpan = Math.max((to - from) / clampZoom(zoomLevel), 1);
-  const visibleFrom = to - visibleSpan;
-  const visibleTo = to;
-  const xRange = Math.max(visibleTo - visibleFrom, 1);
+  const totalSpan = Math.max(to - from, 1);
+  const visibleSpan = Math.max(totalSpan / clampZoom(zoomLevel), 1);
+  const maxPanOffset = Math.max(totalSpan - visibleSpan, 0);
+  const visibleFrom = from + maxPanOffset * panRatio;
+  const effectiveVisibleTo = visibleFrom + visibleSpan;
+  const xRange = Math.max(effectiveVisibleTo - visibleFrom, 1);
   const plotWidth = CHART_WIDTH - CHART_PADDING_LEFT - CHART_PADDING_RIGHT;
   const plotHeight = CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM;
 
   const visiblePoints = useMemo(() => {
-    return points.filter((point) => point.ts >= visibleFrom && point.ts <= visibleTo);
-  }, [points, visibleFrom, visibleTo]);
+    return points.filter((point) => point.ts >= visibleFrom && point.ts <= effectiveVisibleTo);
+  }, [points, visibleFrom, effectiveVisibleTo]);
 
-  const xTicks = useMemo(() => buildXAxisTicks(timeWindow, visibleFrom, visibleTo), [timeWindow, visibleFrom, visibleTo]);
+  const xTicks = useMemo(
+    () => buildXAxisTicks(timeWindow, visibleFrom, effectiveVisibleTo),
+    [timeWindow, visibleFrom, effectiveVisibleTo]
+  );
 
   const yAxis = useMemo(() => {
     const values = visiblePoints
-      .flatMap((point) => [point.value, showSecondaryLine ? point.secondaryValue ?? null : null])
+      .flatMap((point) => [
+        point.value,
+        showSecondaryLine ? point.secondaryValue ?? null : null,
+        showTertiaryLine ? point.tertiaryValue ?? null : null,
+      ])
       .filter((value): value is number => value !== null && Number.isFinite(value));
 
     if (thresholdLine && Number.isFinite(thresholdLine.value)) {
       values.push(thresholdLine.value);
     }
 
-    return buildNiceYAxis(values, yMode, unit);
-  }, [visiblePoints, showSecondaryLine, thresholdLine, yMode, unit]);
+    return buildNiceYAxis(values, yMode, unit, yStartAtZero);
+  }, [visiblePoints, showSecondaryLine, showTertiaryLine, thresholdLine, yMode, unit, yStartAtZero]);
 
   const mapX = (ts: number) => {
     return CHART_PADDING_LEFT + ((ts - visibleFrom) / xRange) * plotWidth;
@@ -307,56 +349,206 @@ const VolumeTimeChart: React.FC<{
     return CHART_PADDING_TOP + plotHeight - normalized * plotHeight;
   };
 
-  const barWidth = useMemo(() => {
-    if (visiblePoints.length < 2) {
-      return 8;
-    }
+  const buildLinePath = (selector: (point: TimeSeriesPoint) => number | null | undefined): string => {
+    let path = '';
+    let segmentOpen = false;
 
-    const sorted = [...visiblePoints].sort((a, b) => a.ts - b.ts);
-    let minGap = Infinity;
+    visiblePoints.forEach((point) => {
+      const value = selector(point);
+      if (value === null || value === undefined || !Number.isFinite(value)) {
+        segmentOpen = false;
+        return;
+      }
 
-    for (let i = 1; i < sorted.length; i += 1) {
-      minGap = Math.min(minGap, sorted[i].ts - sorted[i - 1].ts);
-    }
+      const x = mapX(point.ts);
+      const y = mapY(value);
 
-    if (!Number.isFinite(minGap) || minGap <= 0) {
-      return 8;
-    }
+      if (!segmentOpen) {
+        path += ` M ${x} ${y}`;
+        segmentOpen = true;
+      } else {
+        path += ` L ${x} ${y}`;
+      }
+    });
 
-    return Math.max(4, Math.min(24, (minGap / xRange) * plotWidth * 0.65));
-  }, [visiblePoints, plotWidth, xRange]);
+    return path.trim();
+  };
 
-  const secondaryPath = useMemo(() => {
-    if (!showSecondaryLine) {
+  const buildThresholdHighlightPath = (
+    selector: (point: TimeSeriesPoint) => number | null | undefined,
+    threshold: number
+  ): string => {
+    type SegmentPoint = { x: number; value: number };
+    const series: SegmentPoint[] = visiblePoints
+      .map((point) => {
+        const value = selector(point);
+        if (value === null || value === undefined || !Number.isFinite(value)) {
+          return null;
+        }
+        return { x: mapX(point.ts), value };
+      })
+      .filter((point): point is SegmentPoint => point !== null);
+
+    if (series.length < 2) {
       return '';
     }
 
     let path = '';
 
-    visiblePoints.forEach((point, idx) => {
-      if (point.secondaryValue === null || point.secondaryValue === undefined) {
+    for (let i = 1; i < series.length; i += 1) {
+      const prev = series[i - 1];
+      const curr = series[i];
+      const prevAbove = prev.value > threshold;
+      const currAbove = curr.value > threshold;
+
+      if (prevAbove && currAbove) {
+        path += ` M ${prev.x} ${mapY(prev.value)} L ${curr.x} ${mapY(curr.value)}`;
+        continue;
+      }
+
+      if (prevAbove === currAbove) {
+        continue;
+      }
+
+      const span = curr.value - prev.value;
+      if (Math.abs(span) < 1e-9) {
+        continue;
+      }
+
+      const ratio = (threshold - prev.value) / span;
+      const crossingX = prev.x + ratio * (curr.x - prev.x);
+      const crossingY = mapY(threshold);
+
+      if (prevAbove && !currAbove) {
+        path += ` M ${prev.x} ${mapY(prev.value)} L ${crossingX} ${crossingY}`;
+      } else if (!prevAbove && currAbove) {
+        path += ` M ${crossingX} ${crossingY} L ${curr.x} ${mapY(curr.value)}`;
+      }
+    }
+
+    return path.trim();
+  };
+
+  const buildAreaPath = (selector: (point: TimeSeriesPoint) => number | null | undefined): string => {
+    const baselineY = mapY(yAxis.min);
+    let path = '';
+    let segment: Array<{ x: number; y: number }> = [];
+
+    const flush = () => {
+      if (!segment.length) {
         return;
       }
 
-      const x = mapX(point.ts);
-      const y = mapY(point.secondaryValue);
-      if (!path) {
-        path = `M ${x} ${y}`;
-      } else {
-        path += ` L ${x} ${y}`;
+      const first = segment[0];
+      const last = segment[segment.length - 1];
+
+      path += ` M ${first.x} ${baselineY}`;
+      segment.forEach((point, index) => {
+        path += `${index === 0 ? ' L' : ' L'} ${point.x} ${point.y}`;
+      });
+      path += ` L ${last.x} ${baselineY} Z`;
+      segment = [];
+    };
+
+    visiblePoints.forEach((point) => {
+      const value = selector(point);
+      if (value === null || value === undefined || !Number.isFinite(value)) {
+        flush();
+        return;
       }
 
-      if (idx === visiblePoints.length - 1) {
-        path += '';
+      segment.push({ x: mapX(point.ts), y: mapY(value) });
+    });
+
+    flush();
+    return path.trim();
+  };
+
+  const primaryPath = useMemo(
+    () => buildLinePath((point) => point.value),
+    [visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo]
+  );
+  const secondaryPath = useMemo(
+    () => (showSecondaryLine ? buildLinePath((point) => point.secondaryValue) : ''),
+    [visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo, showSecondaryLine]
+  );
+  const tertiaryPath = useMemo(
+    () => (showTertiaryLine ? buildLinePath((point) => point.tertiaryValue) : ''),
+    [visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo, showTertiaryLine]
+  );
+  const primaryAreaPath = useMemo(
+    () => (chartType === 'area' ? buildAreaPath((point) => point.value) : ''),
+    [chartType, visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo]
+  );
+  const comparePrimaryPath = useMemo(
+    () => buildLinePath((point) => point.compareValue),
+    [visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo]
+  );
+  const compareSecondaryPath = useMemo(
+    () => (showSecondaryLine ? buildLinePath((point) => point.compareSecondaryValue) : ''),
+    [visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo, showSecondaryLine]
+  );
+  const compareTertiaryPath = useMemo(
+    () => (showTertiaryLine ? buildLinePath((point) => point.compareTertiaryValue) : ''),
+    [visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo, showTertiaryLine]
+  );
+
+  const primaryTone = tone === 'primary' ? 'rgba(27,77,62,0.9)' : 'rgba(15,23,42,0.9)';
+  const secondaryTone = 'rgba(27,77,62,0.75)';
+  const tertiaryTone = 'rgba(220,38,38,0.95)';
+  const thresholdTone = 'rgba(220,38,38,0.7)';
+
+  const hasCompareData = useMemo(
+    () =>
+      visiblePoints.some(
+        (point) =>
+          Number.isFinite(point.compareValue ?? Number.NaN) ||
+          Number.isFinite(point.compareSecondaryValue ?? Number.NaN) ||
+          Number.isFinite(point.compareTertiaryValue ?? Number.NaN)
+      ),
+    [visiblePoints]
+  );
+
+  const primaryThresholdPath = useMemo(
+    () =>
+      thresholdAffectsSeriesColor && thresholdLine && Number.isFinite(thresholdLine.value)
+        ? buildThresholdHighlightPath((point) => point.value, thresholdLine.value)
+        : '',
+    [thresholdAffectsSeriesColor, thresholdLine, visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo]
+  );
+  const secondaryThresholdPath = useMemo(
+    () =>
+      thresholdAffectsSeriesColor && thresholdLine && Number.isFinite(thresholdLine.value)
+        ? buildThresholdHighlightPath((point) => point.secondaryValue, thresholdLine.value)
+        : '',
+    [thresholdAffectsSeriesColor, thresholdLine, visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo]
+  );
+  const tertiaryThresholdPath = useMemo(
+    () =>
+      thresholdAffectsSeriesColor && thresholdLine && Number.isFinite(thresholdLine.value)
+        ? buildThresholdHighlightPath((point) => point.tertiaryValue, thresholdLine.value)
+        : '',
+    [thresholdAffectsSeriesColor, thresholdLine, visiblePoints, yAxis.min, yAxis.max, visibleFrom, effectiveVisibleTo]
+  );
+
+  const peakPoint = useMemo<TimeSeriesPoint | null>(() => {
+    if (!showPeakMarker) {
+      return null;
+    }
+
+    let result: TimeSeriesPoint | null = null;
+    visiblePoints.forEach((point) => {
+      if (point.value === null || point.value === undefined) {
+        return;
+      }
+
+      if (!result || (result.value !== null && result.value !== undefined && point.value > result.value)) {
+        result = point;
       }
     });
 
-    return path;
-  }, [visiblePoints, showSecondaryLine, yAxis.min, yAxis.max, visibleFrom, visibleTo]);
-
-  const primaryTone = tone === 'primary' ? 'rgba(27,77,62,0.8)' : 'rgba(15,23,42,0.8)';
-  const secondaryTone = 'rgba(220,38,38,0.95)';
-  const thresholdTone = 'rgba(220,38,38,0.7)';
+    return result;
+  }, [showPeakMarker, visiblePoints]);
 
   const hoveredPoint = hoveredIndex !== null ? visiblePoints[hoveredIndex] : null;
 
@@ -368,7 +560,14 @@ const VolumeTimeChart: React.FC<{
           <p className="text-base font-mono text-ink/70 mt-1">{yLabel}</p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          {showSecondaryLine && <p className="text-sm font-mono text-ink/70">Line: {secondaryLabel}</p>}
+          {(showSecondaryLine || showTertiaryLine) && (
+            <p className="text-sm font-mono text-ink/70">
+              Lines: {showSecondaryLine ? secondaryLabel : ''}
+              {showSecondaryLine && showTertiaryLine ? ', ' : ''}
+              {showTertiaryLine ? tertiaryLabel : ''}
+            </p>
+          )}
+          {hasCompareData && <p className="text-sm font-mono text-ink/70">Dashed: previous window</p>}
           <div className="flex items-center gap-2 text-sm">
             <span className="font-mono text-ink/70">Zoom</span>
             <input
@@ -466,31 +665,65 @@ const VolumeTimeChart: React.FC<{
               </g>
             ))}
 
-            {visiblePoints.map((point, idx) => {
-              if (point.value === null || point.value === undefined) {
-                return null;
-              }
+            {thresholdLine && shadeAboveThreshold && Number.isFinite(thresholdLine.value) && (
+              <rect
+                x={CHART_PADDING_LEFT}
+                y={CHART_PADDING_TOP}
+                width={CHART_WIDTH - CHART_PADDING_LEFT - CHART_PADDING_RIGHT}
+                height={Math.max(0, mapY(thresholdLine.value) - CHART_PADDING_TOP)}
+                fill="rgba(220,38,38,0.1)"
+              />
+            )}
 
-              const xCenter = mapX(point.ts);
-              const y = mapY(point.value);
-              const baselineY = mapY(yAxis.min);
-              const height = Math.max(1, baselineY - y);
+            {chartType === 'area' && primaryAreaPath && <path d={primaryAreaPath} fill="rgba(27,77,62,0.2)" stroke="none" />}
 
-              return (
-                <rect
-                  key={`bar-${point.ts}-${idx}`}
-                  x={xCenter - barWidth / 2}
-                  y={y}
-                  width={barWidth}
-                  height={height}
-                  fill={primaryTone}
-                  opacity={hoveredIndex === idx ? 1 : 0.85}
-                />
-              );
-            })}
+            {primaryPath && <path d={primaryPath} fill="none" stroke={primaryTone} strokeWidth="2.5" />}
+            {primaryThresholdPath && <path d={primaryThresholdPath} fill="none" stroke={tertiaryTone} strokeWidth="2.5" />}
+
+            {hasCompareData && comparePrimaryPath && (
+              <path
+                d={comparePrimaryPath}
+                fill="none"
+                stroke={tone === 'primary' ? 'rgba(27,77,62,0.38)' : 'rgba(15,23,42,0.38)'}
+                strokeWidth="2"
+                strokeDasharray="6 4"
+              />
+            )}
 
             {showSecondaryLine && secondaryPath && (
               <path d={secondaryPath} fill="none" stroke={secondaryTone} strokeWidth="2" strokeDasharray="4 3" />
+            )}
+            {showSecondaryLine && secondaryThresholdPath && (
+              <path d={secondaryThresholdPath} fill="none" stroke={tertiaryTone} strokeWidth="2" strokeDasharray="4 3" />
+            )}
+            {showSecondaryLine && hasCompareData && compareSecondaryPath && (
+              <path d={compareSecondaryPath} fill="none" stroke="rgba(27,77,62,0.35)" strokeWidth="1.75" strokeDasharray="6 4" />
+            )}
+
+            {showTertiaryLine && tertiaryPath && (
+              <path d={tertiaryPath} fill="none" stroke={secondaryTone} strokeWidth="2" strokeDasharray="2 3" />
+            )}
+            {showTertiaryLine && tertiaryThresholdPath && (
+              <path d={tertiaryThresholdPath} fill="none" stroke={tertiaryTone} strokeWidth="2" strokeDasharray="2 3" />
+            )}
+            {showTertiaryLine && hasCompareData && compareTertiaryPath && (
+              <path d={compareTertiaryPath} fill="none" stroke="rgba(220,38,38,0.4)" strokeWidth="1.75" strokeDasharray="6 4" />
+            )}
+
+            {peakPoint && peakPoint.value !== null && peakPoint.value !== undefined && (
+              <g>
+                <circle cx={mapX(peakPoint.ts)} cy={mapY(peakPoint.value)} r="4" fill={tertiaryTone} />
+                <text
+                  x={mapX(peakPoint.ts)}
+                  y={Math.max(CHART_PADDING_TOP + 10, mapY(peakPoint.value) - 10)}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fill="rgba(15,23,42,0.95)"
+                  fontWeight="700"
+                >
+                  {`${peakLabelPrefix}: ${formatValue(peakPoint.value, unit, true)}`}
+                </text>
+              </g>
             )}
 
             {thresholdLine && Number.isFinite(thresholdLine.value) && (
@@ -511,7 +744,7 @@ const VolumeTimeChart: React.FC<{
                   fontSize="10"
                   fill="rgba(220,38,38,0.95)"
                 >
-                  {thresholdLine.label}
+                  {thresholdCapacityLabel ? `${thresholdLine.label} · ${thresholdCapacityLabel}` : thresholdLine.label}
                 </text>
               </g>
             )}
@@ -528,23 +761,47 @@ const VolumeTimeChart: React.FC<{
             )}
           </svg>
 
+          <div className="mt-3 px-1">
+            <div className="flex items-center gap-3 text-xs font-mono text-ink/70">
+              <span className="min-w-[32px]">Pan</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={panRatio}
+                onChange={(event) => setPanRatio(Number(event.target.value))}
+                className="w-full"
+                disabled={zoomLevel <= 1}
+              />
+              <span className="min-w-[44px] text-right">{Math.round(panRatio * 100)}%</span>
+            </div>
+          </div>
+
           {hoveredPoint && (
             <div className="absolute top-2 left-2 bg-white border-2 border-ink px-3 py-2 text-xs font-mono shadow-hard-sm z-10">
               <div className="font-bold text-ink">{new Date(hoveredPoint.ts).toLocaleString()}</div>
-              {!tooltipTotalLabel && (
-                <div className="text-ink/70">
-                  Value: {hoveredPoint.value === null ? 'N/A' : formatValue(hoveredPoint.value, unit, true)}
-                </div>
-              )}
+              <div className="text-ink/70">
+                {tooltipTotalLabel || 'Value'}: {hoveredPoint.value === null ? 'N/A' : formatValue(hoveredPoint.value, unit, true)}
+              </div>
               {showSecondaryLine && hoveredPoint.secondaryValue !== null && hoveredPoint.secondaryValue !== undefined && (
-                <div className="text-red-700">
+                <div className="text-ink/70">
                   {secondaryLabel}: {formatValue(hoveredPoint.secondaryValue, unit, true)}
                 </div>
               )}
-              {tooltipTotalLabel && hoveredPoint.value !== null && (
-                <div className="text-ink/70">
-                  {tooltipTotalLabel}: {formatValue(hoveredPoint.value, unit, true)}
+              {showTertiaryLine && hoveredPoint.tertiaryValue !== null && hoveredPoint.tertiaryValue !== undefined && (
+                <div className="text-red-700">
+                  {tertiaryLabel}: {formatValue(hoveredPoint.tertiaryValue, unit, true)}
                 </div>
+              )}
+              {hoveredPoint.compareValue !== null && hoveredPoint.compareValue !== undefined && (
+                <div className="text-ink/60">Prev {tooltipTotalLabel || 'Value'}: {formatValue(hoveredPoint.compareValue, unit, true)}</div>
+              )}
+              {showSecondaryLine && hoveredPoint.compareSecondaryValue !== null && hoveredPoint.compareSecondaryValue !== undefined && (
+                <div className="text-ink/60">Prev {secondaryLabel}: {formatValue(hoveredPoint.compareSecondaryValue, unit, true)}</div>
+              )}
+              {showTertiaryLine && hoveredPoint.compareTertiaryValue !== null && hoveredPoint.compareTertiaryValue !== undefined && (
+                <div className="text-ink/60">Prev {tertiaryLabel}: {formatValue(hoveredPoint.compareTertiaryValue, unit, true)}</div>
               )}
             </div>
           )}
@@ -565,6 +822,7 @@ const ServiceMetricsPage: React.FC = () => {
   const [error, setError] = useState('');
   const [systemMetrics, setSystemMetrics] = useState<SystemMetricPoint[]>([]);
   const [requestMetrics, setRequestMetrics] = useState<RequestMetricPoint[]>([]);
+  const [previousRequestMetrics, setPreviousRequestMetrics] = useState<RequestMetricPoint[]>([]);
   const [timeWindow, setTimeWindow] = useState<TimeWindow>('hours');
   const [methodFilter, setMethodFilter] = useState<string>('all');
   const [endpointFilter, setEndpointFilter] = useState<string>('all');
@@ -574,6 +832,9 @@ const ServiceMetricsPage: React.FC = () => {
   });
   const [showP95Line, setShowP95Line] = useState(true);
   const [showErrorThreshold, setShowErrorThreshold] = useState(true);
+  const [compareMode, setCompareMode] = useState(false);
+  const [latencyThresholdMs, setLatencyThresholdMs] = useState(700);
+  const [errorThresholdPercent, setErrorThresholdPercent] = useState(5);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -587,7 +848,7 @@ const ServiceMetricsPage: React.FC = () => {
     }
 
     loadMetrics();
-  }, [navigate, projectId, decodedServiceName, timeWindow]);
+  }, [navigate, projectId, decodedServiceName, timeWindow, compareMode]);
 
   const loadMetrics = async () => {
     if (!projectId || !decodedServiceName) return;
@@ -600,13 +861,19 @@ const ServiceMetricsPage: React.FC = () => {
       const from = to - TIME_WINDOW_CONFIG[timeWindow].windowMs;
       setTimeRange({ from, to });
 
-      const [systemData, requestData] = await Promise.all([
+      const windowMs = TIME_WINDOW_CONFIG[timeWindow].windowMs;
+      const previousFrom = from - windowMs;
+      const previousTo = to - windowMs;
+
+      const [systemData, requestData, previousRequestData] = await Promise.all([
         getSystemMetrics(projectId, decodedServiceName, from, to),
         getRequestMetrics(projectId, decodedServiceName, from, to),
+        compareMode ? getRequestMetrics(projectId, decodedServiceName, previousFrom, previousTo) : Promise.resolve([]),
       ]);
 
       setSystemMetrics(systemData || []);
       setRequestMetrics(requestData || []);
+      setPreviousRequestMetrics(previousRequestData || []);
     } catch (err: any) {
       setError(err.message || 'Failed to load service metrics');
     } finally {
@@ -735,63 +1002,106 @@ const ServiceMetricsPage: React.FC = () => {
     });
   }, [requestMetrics, methodFilter, endpointFilter]);
 
+  const filteredPreviousRequestMetrics = useMemo(() => {
+    return previousRequestMetrics.filter((metric) => {
+      const methodOk = methodFilter === 'all' || metric.method === methodFilter;
+      const endpointOk = endpointFilter === 'all' || metric.route === endpointFilter;
+      return methodOk && endpointOk;
+    });
+  }, [previousRequestMetrics, methodFilter, endpointFilter]);
+
   const requestTimeline = useMemo(() => {
-    const grouped = new Map<
-      number,
-      {
-        totalRequests: number;
-        totalErrors: number;
-        weightedLatencySum: number;
-        weightedP95Sum: number;
-      }
-    >();
+    const buildGroupedMap = (source: RequestMetricPoint[]) => {
+      const grouped = new Map<
+        number,
+        {
+          totalRequests: number;
+          totalErrors: number;
+          weightedLatencySum: number;
+          weightedP95Sum: number;
+          weightedP99Sum: number;
+        }
+      >();
 
-    for (const point of filteredRequestMetrics) {
-      const bucket = toNumberBucket(point.minuteBucket ?? point.hourBucket ?? point.dayBucket);
-      const existing = grouped.get(bucket);
-      const totalRequests = point.totalRequests || 0;
-      const totalErrors = (point.clientErrorCount || 0) + (point.serverErrorCount || 0);
+      for (const point of source) {
+        const bucket = toNumberBucket(point.minuteBucket ?? point.hourBucket ?? point.dayBucket);
+        const existing = grouped.get(bucket);
+        const totalRequests = point.totalRequests || 0;
+        const totalErrors = (point.clientErrorCount || 0) + (point.serverErrorCount || 0);
+        const p99ResponseTime = point.p99ResponseTime ?? point.maxResponseTime ?? point.p95ResponseTime ?? 0;
 
-      if (!existing) {
-        grouped.set(bucket, {
-          totalRequests,
-          totalErrors,
-          weightedLatencySum: (point.avgResponseTime || 0) * totalRequests,
-          weightedP95Sum: (point.p95ResponseTime || 0) * totalRequests,
-        });
-      } else {
-        existing.totalRequests += totalRequests;
-        existing.totalErrors += totalErrors;
-        existing.weightedLatencySum += (point.avgResponseTime || 0) * totalRequests;
-        existing.weightedP95Sum += (point.p95ResponseTime || 0) * totalRequests;
+        if (!existing) {
+          grouped.set(bucket, {
+            totalRequests,
+            totalErrors,
+            weightedLatencySum: (point.avgResponseTime || 0) * totalRequests,
+            weightedP95Sum: (point.p95ResponseTime || 0) * totalRequests,
+            weightedP99Sum: (p99ResponseTime || 0) * totalRequests,
+          });
+        } else {
+          existing.totalRequests += totalRequests;
+          existing.totalErrors += totalErrors;
+          existing.weightedLatencySum += (point.avgResponseTime || 0) * totalRequests;
+          existing.weightedP95Sum += (point.p95ResponseTime || 0) * totalRequests;
+          existing.weightedP99Sum += (p99ResponseTime || 0) * totalRequests;
+        }
       }
-    }
+
+      return grouped;
+    };
+
+    const grouped = buildGroupedMap(filteredRequestMetrics);
+    const previousGrouped = buildGroupedMap(filteredPreviousRequestMetrics);
+    const compareOffsetMs = TIME_WINDOW_CONFIG[timeWindow].windowMs;
 
     return expectedBuckets.map((bucket) => {
       const data = grouped.get(bucket);
+      const compareData = compareMode ? previousGrouped.get(bucket - compareOffsetMs) : undefined;
+
       const totalRequests = data?.totalRequests ?? 0;
       const totalErrors = data?.totalErrors ?? 0;
 
+      const compareTotalRequests = compareData?.totalRequests ?? 0;
+      const compareTotalErrors = compareData?.totalErrors ?? 0;
+
       const avgLatency = totalRequests > 0 && data ? data.weightedLatencySum / totalRequests : null;
       const p95Latency = totalRequests > 0 && data ? data.weightedP95Sum / totalRequests : null;
+      const p99Latency = totalRequests > 0 && data ? data.weightedP99Sum / totalRequests : null;
       const errorRate = totalRequests > 0 ? (totalErrors / totalRequests) * 100 : 0;
       const uptime = 100 - errorRate;
+
+      const compareAvgLatency =
+        compareMode && compareTotalRequests > 0 && compareData ? compareData.weightedLatencySum / compareTotalRequests : null;
+      const compareP95Latency =
+        compareMode && compareTotalRequests > 0 && compareData ? compareData.weightedP95Sum / compareTotalRequests : null;
+      const compareP99Latency =
+        compareMode && compareTotalRequests > 0 && compareData ? compareData.weightedP99Sum / compareTotalRequests : null;
+      const compareErrorRate = compareMode && compareTotalRequests > 0 ? (compareTotalErrors / compareTotalRequests) * 100 : null;
+      const compareUptime = compareMode && compareErrorRate !== null ? 100 - compareErrorRate : null;
 
       return {
         bucket,
         totalRequests,
         avgLatency,
         p95Latency,
+        p99Latency,
         errorRate,
         uptime,
+        compareTotalRequests: compareMode ? compareTotalRequests : null,
+        compareAvgLatency,
+        compareP95Latency,
+        compareP99Latency,
+        compareErrorRate,
+        compareUptime,
       };
     });
-  }, [filteredRequestMetrics, expectedBuckets]);
+  }, [filteredRequestMetrics, filteredPreviousRequestMetrics, expectedBuckets, compareMode, timeWindow]);
 
   const requestCountSeries = useMemo<TimeSeriesPoint[]>(() => {
     return requestTimeline.map((point) => ({
       ts: point.bucket,
       value: point.totalRequests,
+      compareValue: point.compareTotalRequests,
     }));
   }, [requestTimeline]);
 
@@ -800,6 +1110,10 @@ const ServiceMetricsPage: React.FC = () => {
       ts: point.bucket,
       value: point.avgLatency,
       secondaryValue: point.p95Latency,
+      tertiaryValue: point.p99Latency,
+      compareValue: point.compareAvgLatency,
+      compareSecondaryValue: point.compareP95Latency,
+      compareTertiaryValue: point.compareP99Latency,
     }));
   }, [requestTimeline]);
 
@@ -807,6 +1121,7 @@ const ServiceMetricsPage: React.FC = () => {
     return requestTimeline.map((point) => ({
       ts: point.bucket,
       value: point.errorRate,
+      compareValue: point.compareErrorRate,
     }));
   }, [requestTimeline]);
 
@@ -814,6 +1129,7 @@ const ServiceMetricsPage: React.FC = () => {
     return requestTimeline.map((point) => ({
       ts: point.bucket,
       value: point.uptime,
+      compareValue: point.compareUptime,
     }));
   }, [requestTimeline]);
 
@@ -931,9 +1247,12 @@ const ServiceMetricsPage: React.FC = () => {
                   unit="percent"
                   points={systemCpuSeries}
                   tone="primary"
+                  chartType="line"
                   from={timeRange.from}
                   to={timeRange.to}
                   timeWindow={timeWindow}
+                  showPeakMarker
+                  peakLabelPrefix="Peak CPU"
                 />
                 <VolumeTimeChart
                   title="Memory Trend"
@@ -941,9 +1260,12 @@ const ServiceMetricsPage: React.FC = () => {
                   unit="mb"
                   points={systemMemorySeries}
                   tone="ink"
+                  chartType="line"
                   from={timeRange.from}
                   to={timeRange.to}
                   timeWindow={timeWindow}
+                  showPeakMarker
+                  peakLabelPrefix="Peak Memory"
                 />
               </div>
 
@@ -1026,13 +1348,58 @@ const ServiceMetricsPage: React.FC = () => {
                     Show p95 latency line
                   </label>
                   <label className="inline-flex items-center gap-2">
+                    <input type="checkbox" checked={compareMode} onChange={(event) => setCompareMode(event.target.checked)} />
+                    Compare with previous window
+                  </label>
+                  <label className="inline-flex items-center gap-2">
                     <input
                       type="checkbox"
                       checked={showErrorThreshold}
                       onChange={(event) => setShowErrorThreshold(event.target.checked)}
                     />
-                    Show 5% error threshold
+                    Show error threshold
                   </label>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Latency threshold (ms)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={latencyThresholdMs}
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        setLatencyThresholdMs(Number.isFinite(next) && next >= 0 ? next : 0);
+                      }}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Error threshold (%)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      value={errorThresholdPercent}
+                      onChange={(event) => {
+                        const next = Number(event.target.value);
+                        if (!Number.isFinite(next)) {
+                          setErrorThresholdPercent(0);
+                          return;
+                        }
+                        setErrorThresholdPercent(Math.max(0, Math.min(100, next)));
+                      }}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <div className="w-full border-2 border-ink bg-paper px-3 py-2 text-sm font-mono text-ink/70">
+                      Selected threshold capacity: {formatValue(latencyThresholdMs, 'ms', true)} · {formatValue(errorThresholdPercent, 'percent', true)}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1043,10 +1410,14 @@ const ServiceMetricsPage: React.FC = () => {
                   unit="requests"
                   points={requestCountSeries}
                   tone="primary"
+                  chartType="line"
                   from={timeRange.from}
                   to={timeRange.to}
                   timeWindow={timeWindow}
                   tooltipTotalLabel="Total Requests"
+                  showPeakMarker
+                  peakLabelPrefix="Peak"
+                  yStartAtZero
                 />
                 <VolumeTimeChart
                   title="Latency"
@@ -1054,11 +1425,19 @@ const ServiceMetricsPage: React.FC = () => {
                   unit="ms"
                   points={requestLatencySeries}
                   tone="ink"
+                  chartType="line"
                   from={timeRange.from}
                   to={timeRange.to}
                   timeWindow={timeWindow}
                   showSecondaryLine={showP95Line}
                   secondaryLabel="p95"
+                  showTertiaryLine
+                  tertiaryLabel="p99"
+                  thresholdLine={{ value: latencyThresholdMs, label: 'Latency threshold' }}
+                  shadeAboveThreshold
+                  thresholdAffectsSeriesColor
+                  thresholdCapacityLabel={`Capacity ${formatValue(latencyThresholdMs, 'ms', true)}`}
+                  yStartAtZero
                 />
                 <VolumeTimeChart
                   title="Error Rate"
@@ -1066,11 +1445,14 @@ const ServiceMetricsPage: React.FC = () => {
                   unit="percent"
                   points={requestErrorRateSeries}
                   tone="ink"
+                  chartType="line"
                   from={timeRange.from}
                   to={timeRange.to}
                   timeWindow={timeWindow}
                   yMode="percent"
-                  thresholdLine={showErrorThreshold ? { value: 5, label: '5% threshold' } : undefined}
+                  thresholdLine={showErrorThreshold ? { value: errorThresholdPercent, label: `${formatValue(errorThresholdPercent, 'percent', true)} threshold` } : undefined}
+                  thresholdAffectsSeriesColor
+                  yStartAtZero
                 />
                 <VolumeTimeChart
                   title="Uptime"
@@ -1078,6 +1460,7 @@ const ServiceMetricsPage: React.FC = () => {
                   unit="percent"
                   points={requestUptimeSeries}
                   tone="primary"
+                  chartType="line"
                   from={timeRange.from}
                   to={timeRange.to}
                   timeWindow={timeWindow}
