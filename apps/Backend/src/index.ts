@@ -8,12 +8,12 @@ import { metricsRouter } from "./routes/getMetrics";
 import setupRouter from "./routes/setup";
 import authRouter from "./routes/auth";
 import projectRouter from "./routes/project";
-
+import { connectRabbit } from "./config/rabbit";
+import { startMetricWorker } from "./jobs/metric.worker";
 const app = express();
 
-// Enable CORS for frontend
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'], // Add your production domain here
+  origin: ['http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
 }));
 
@@ -27,7 +27,9 @@ app.use("/metrics", metricsRouter);
 app.use("/create", setupRouter);
 
 const PORT = 4000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Collector running on port ${PORT}`);
+  await connectRabbit();
+  await startMetricWorker();
   startAggregationJob();
 });
