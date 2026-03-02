@@ -32,7 +32,6 @@ export async function startMetricWorker() {
     METRICS_QUEUE,
     async (msg) => {
       if (!msg) return;
-      const workerStartedAt = Date.now();
 
       try {
         const payload = JSON.parse(msg.content.toString()) as QueuedMetric;
@@ -93,16 +92,8 @@ export async function startMetricWorker() {
           type: metric.type,
           service: metric.serviceName
         });
-        console.log("Worker processing latency:", Date.now() - workerStartedAt, "ms", {
-          projectId,
-          type: metric.type,
-          service: metric.serviceName,
-        });
       } catch (error) {
         console.error("Worker failed to persist metric:", error);
-        console.log("Worker processing latency:", Date.now() - workerStartedAt, "ms", {
-          status: "failed",
-        });
         channel.nack(msg, false, true);
       }
     },

@@ -231,3 +231,24 @@ model SystemMetricAggregateDay {
   @@index([projectId, serviceName, dayBucket])
   @@unique([projectId, serviceName, dayBucket])
 }
+
+model AlertRule {
+  id           String   @id @default(uuid())
+  projectId    String
+  serviceName  String
+
+  metricType   String  
+  metricField  String   
+
+  operator     String 
+  threshold    Float
+
+  windowSec    Int    
+
+  endpoint     String?  
+  webhookUrl   String?
+
+  isActive     Boolean  @default(true)
+  triggered    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+}

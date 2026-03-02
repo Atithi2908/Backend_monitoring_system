@@ -13,12 +13,6 @@ export const collectMetric = async (req: Request, res: Response) => {
     const projectId = (req as any).projectId;
     publishMetric({ projectId, metric });
 
-    console.log("Metric ingested:", {
-      projectId,
-      type: metric.type,
-      service: metric.serviceName
-    });
-
     res.status(202).json({ status: "queued" });
   } catch (error) {
     console.error("Error queueing metric:", error);

@@ -10,6 +10,8 @@ import authRouter from "./routes/auth";
 import projectRouter from "./routes/project";
 import { connectRabbit } from "./config/rabbit";
 import { startMetricWorker } from "./jobs/metric.worker";
+import alertRouter from "./routes/alert";
+import { startAlertEvaluationJob } from "./jobs/alertEvaluator";
 const app = express();
 
 app.use(cors({
@@ -25,6 +27,7 @@ app.use("/collect", collectRouter);
 app.use("/", metricsDebugRouter);
 app.use("/metrics", metricsRouter);
 app.use("/create", setupRouter);
+app.use("/alerts", alertRouter);
 
 const PORT = 4000;
 app.listen(PORT, async () => {
@@ -32,4 +35,5 @@ app.listen(PORT, async () => {
   await connectRabbit();
   await startMetricWorker();
   startAggregationJob();
+  startAlertEvaluationJob();
 });
