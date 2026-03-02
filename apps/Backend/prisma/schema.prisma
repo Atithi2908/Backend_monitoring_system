@@ -34,6 +34,7 @@ model Project {
   description String?
   region      String   @default("US-EAST-1")
   status      String   @default("ACTIVE")
+  slackWebhookUrl String?
 
   userId      String?
   createdAt   DateTime @default(now())
@@ -246,7 +247,6 @@ model AlertRule {
   windowSec    Int    
 
   endpoint     String?  
-  webhookUrl   String?
 
   isActive     Boolean  @default(true)
   triggered    Boolean  @default(false)

@@ -1,6 +1,33 @@
 import { API_BASE_URL } from '../config/api';
 import { getToken } from './auth';
 
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    try {
+      const payload = await response.json();
+      if (payload?.error) return payload.error;
+      if (payload?.message) return payload.message;
+    } catch {
+    }
+  }
+
+  try {
+    const text = await response.text();
+    if (text) {
+      const trimmed = text.trim();
+      if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
+        return `${fallback} (received HTML error response)`;
+      }
+      return trimmed;
+    }
+  } catch {
+  }
+
+  return `${fallback} (status ${response.status})`;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -8,6 +35,7 @@ export interface Project {
   description?: string | null;
   region: string;
   status: string;
+  slackWebhookUrl?: string | null;
   userId: string;
   createdAt: string;
   apiKeys?: ApiKey[];
@@ -77,6 +105,62 @@ export interface RequestMetricsFilters {
   endpoint?: string;
 }
 
+export type AlertMetricType = 'system' | 'request';
+export type AlertMetricField = 'avgCpu' | 'avgMemoryMb' | 'errorRate' | 'avgLatencyMs';
+export type AlertOperator = '>' | '<';
+
+export interface AlertRule {
+  id: string;
+  projectId: string;
+  serviceName: string;
+  metricType: AlertMetricType;
+  metricField: string;
+  operator: AlertOperator;
+  threshold: number;
+  windowSec: number;
+  endpoint?: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateAlertRuleInput {
+  projectId: string;
+  serviceName: string;
+  metricType: AlertMetricType;
+  metricField: AlertMetricField;
+  operator: AlertOperator;
+  threshold: number;
+  windowSec: number;
+  endpoint?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateAlertRuleInput {
+  threshold?: number;
+  windowSec?: number;
+}
+
+export async function setProjectSlackWebhook(projectId: string, slackWebhookUrl: string): Promise<Project> {
+  const token = getToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/slack-webhook`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ slackWebhookUrl }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, 'Failed to set project slack webhook'));
+  }
+
+  const data = await response.json();
+  return data.project;
+}
+
 // Get all projects for user
 export async function getProjects(): Promise<Project[]> {
   const token = getToken();
@@ -87,8 +171,7 @@ export async function getProjects(): Promise<Project[]> {
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to fetch projects');
+    throw new Error(await extractErrorMessage(response, 'Failed to fetch projects'));
   }
 
   const data = await response.json();
@@ -105,8 +188,7 @@ export async function getProjectDetails(projectId: string): Promise<Project> {
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to fetch project');
+    throw new Error(await extractErrorMessage(response, 'Failed to fetch project'));
   }
 
   const data = await response.json();
@@ -123,8 +205,7 @@ export async function getProjectServices(projectId: string): Promise<Service[]> 
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to fetch services');
+    throw new Error(await extractErrorMessage(response, 'Failed to fetch services'));
   }
 
   const data = await response.json();
@@ -146,8 +227,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to create project');
+    throw new Error(await extractErrorMessage(response, 'Failed to create project'));
   }
 
   return await response.json();
@@ -168,8 +248,7 @@ export async function createService(input: CreateServiceInput): Promise<Service>
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to create service');
+    throw new Error(await extractErrorMessage(response, 'Failed to create service'));
   }
 
   const data = await response.json();
@@ -187,8 +266,7 @@ export async function deleteProject(projectId: string): Promise<void> {
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to delete project');
+    throw new Error(await extractErrorMessage(response, 'Failed to delete project'));
   }
 }
 
@@ -206,8 +284,7 @@ export async function updateProjectStatus(projectId: string, status: string): Pr
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to update project status');
+    throw new Error(await extractErrorMessage(response, 'Failed to update project status'));
   }
 
   const data = await response.json();
@@ -226,8 +303,7 @@ export async function createProjectApiKey(projectId: string): Promise<string> {
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to create API key');
+    throw new Error(await extractErrorMessage(response, 'Failed to create API key'));
   }
 
   const data = await response.json();
@@ -255,8 +331,7 @@ export async function getSystemMetrics(
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to fetch system metrics');
+    throw new Error(await extractErrorMessage(response, 'Failed to fetch system metrics'));
   }
 
   return await response.json();
@@ -292,9 +367,68 @@ export async function getRequestMetrics(
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to fetch request metrics');
+    throw new Error(await extractErrorMessage(response, 'Failed to fetch request metrics'));
   }
 
   return await response.json();
+}
+
+export async function createAlertRule(input: CreateAlertRuleInput): Promise<any> {
+  const token = getToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch(`${API_BASE_URL}/alerts`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, 'Failed to create alert rule'));
+  }
+
+  const data = await response.json();
+  return data.alertRule;
+}
+
+export async function getAlertRules(projectId: string, serviceName: string): Promise<AlertRule[]> {
+  const token = getToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const params = new URLSearchParams({ projectId, serviceName });
+
+  const response = await fetch(`${API_BASE_URL}/alerts?${params.toString()}`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, 'Failed to fetch alert rules'));
+  }
+
+  const data = await response.json();
+  return data.rules;
+}
+
+export async function updateAlertRule(alertRuleId: string, input: UpdateAlertRuleInput): Promise<AlertRule> {
+  const token = getToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch(`${API_BASE_URL}/alerts/${alertRuleId}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, 'Failed to update alert rule'));
+  }
+
+  const data = await response.json();
+  return data.alertRule;
 }

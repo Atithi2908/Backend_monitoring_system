@@ -3,7 +3,19 @@ import { AlertRule } from "@prisma/client";
 import { prisma } from "../config/database";
 
 type NumericOperator = ">" | ">=" | "<" | "<=" | "==" | "!=";
-type SupportedMetricField = "avgLatencyMs" | "errorRate" | "avgCpu" | "avgMemoryMb";
+type SupportedMetricField =
+  | "avgCpu"
+  | "maxCpu"
+  | "avgMemoryMb"
+  | "maxMemoryMb"
+  | "totalRequests"
+  | "successCount"
+  | "clientErrorCount"
+  | "serverErrorCount"
+  | "errorCount"
+  | "errorRate"
+  | "avgLatencyMs"
+  | "maxLatencyMs";
 
 function compareWithOperator(left: number, operator: string, right: number): boolean {
   const op = operator as NumericOperator;
@@ -28,15 +40,30 @@ function compareWithOperator(left: number, operator: string, right: number): boo
 
 function isSupportedMetricField(metricField: string): metricField is SupportedMetricField {
   return (
-    metricField === "avgLatencyMs" ||
-    metricField === "errorRate" ||
     metricField === "avgCpu" ||
-    metricField === "avgMemoryMb"
+    metricField === "maxCpu" ||
+    metricField === "avgMemoryMb" ||
+    metricField === "maxMemoryMb" ||
+    metricField === "totalRequests" ||
+    metricField === "successCount" ||
+    metricField === "clientErrorCount" ||
+    metricField === "serverErrorCount" ||
+    metricField === "errorCount" ||
+    metricField === "errorRate" ||
+    metricField === "avgLatencyMs" ||
+    metricField === "maxLatencyMs"
   );
 }
 
 async function sendAlertWebhook(rule: AlertRule, message: string): Promise<void> {
-  const webhookUrl = (rule as any).webhookUrl as string | undefined;
+  const project = await prisma.project.findUnique({
+    where: { id: rule.projectId },
+    select: {
+      ...( { slackWebhookUrl: true } as Record<string, boolean> ),
+    } as any,
+  });
+
+  const webhookUrl = (project as any)?.slackWebhookUrl as string | undefined;
 
   if (!webhookUrl) {
     return;
@@ -64,7 +91,12 @@ async function computeMetricValue(rule: AlertRule, fromTs: bigint, toTs: bigint)
     return null;
   }
 
-  if (rule.metricField === "avgCpu" || rule.metricField === "avgMemoryMb") {
+  if (
+    rule.metricField === "avgCpu" ||
+    rule.metricField === "maxCpu" ||
+    rule.metricField === "avgMemoryMb" ||
+    rule.metricField === "maxMemoryMb"
+  ) {
     const systemAggregate = await prisma.systemMetric.aggregate({
       where: {
         projectId: rule.projectId,
@@ -78,13 +110,25 @@ async function computeMetricValue(rule: AlertRule, fromTs: bigint, toTs: bigint)
         cpuUsagePercent: true,
         memoryUsageMb: true,
       },
+      _max: {
+        cpuUsagePercent: true,
+        memoryUsageMb: true,
+      },
     });
 
     if (rule.metricField === "avgCpu") {
       return systemAggregate._avg.cpuUsagePercent ?? null;
     }
 
-    return systemAggregate._avg.memoryUsageMb ?? null;
+    if (rule.metricField === "maxCpu") {
+      return systemAggregate._max.cpuUsagePercent ?? null;
+    }
+
+    if (rule.metricField === "avgMemoryMb") {
+      return systemAggregate._avg.memoryUsageMb ?? null;
+    }
+
+    return systemAggregate._max.memoryUsageMb ?? null;
   }
 
   const requestWhere = {
@@ -97,15 +141,22 @@ async function computeMetricValue(rule: AlertRule, fromTs: bigint, toTs: bigint)
     },
   };
 
-  if (rule.metricField === "avgLatencyMs") {
+  if (rule.metricField === "avgLatencyMs" || rule.metricField === "maxLatencyMs") {
     const requestAggregate = await prisma.requestMetric.aggregate({
       where: requestWhere,
       _avg: {
         latencyMs: true,
       },
+      _max: {
+        latencyMs: true,
+      },
     });
 
-    return requestAggregate._avg.latencyMs ?? null;
+    if (rule.metricField === "avgLatencyMs") {
+      return requestAggregate._avg.latencyMs ?? null;
+    }
+
+    return requestAggregate._max.latencyMs ?? null;
   }
 
   const totalAggregate = await prisma.requestMetric.aggregate({
@@ -120,6 +171,10 @@ async function computeMetricValue(rule: AlertRule, fromTs: bigint, toTs: bigint)
     return null;
   }
 
+  if (rule.metricField === "totalRequests") {
+    return totalCount;
+  }
+
   const errorAggregate = await prisma.requestMetric.aggregate({
     where: {
       ...requestWhere,
@@ -129,6 +184,66 @@ async function computeMetricValue(rule: AlertRule, fromTs: bigint, toTs: bigint)
       _all: true,
     },
   });
+
+  const errorCount = errorAggregate._count._all;
+
+  if (rule.metricField === "errorCount") {
+    return errorCount;
+  }
+
+  if (rule.metricField === "errorRate") {
+    return (errorCount / totalCount) * 100;
+  }
+
+  const successAggregate = await prisma.requestMetric.aggregate({
+    where: {
+      ...requestWhere,
+      statusCode: {
+        gte: 200,
+        lt: 300,
+      },
+    },
+    _count: {
+      _all: true,
+    },
+  });
+
+  if (rule.metricField === "successCount") {
+    return successAggregate._count._all;
+  }
+
+  const clientErrorAggregate = await prisma.requestMetric.aggregate({
+    where: {
+      ...requestWhere,
+      statusCode: {
+        gte: 400,
+        lt: 500,
+      },
+    },
+    _count: {
+      _all: true,
+    },
+  });
+
+  if (rule.metricField === "clientErrorCount") {
+    return clientErrorAggregate._count._all;
+  }
+
+  const serverErrorAggregate = await prisma.requestMetric.aggregate({
+    where: {
+      ...requestWhere,
+      statusCode: {
+        gte: 500,
+      },
+    },
+    _count: {
+      _all: true,
+    },
+  });
+
+  if (rule.metricField === "serverErrorCount") {
+    return serverErrorAggregate._count._all;
+  }
 
   return (errorAggregate._count._all / totalCount) * 100;
 }
@@ -230,9 +345,6 @@ export function startAlertEvaluationJob() {
       const rules = await prisma.alertRule.findMany({
         where: {
           isActive: true,
-          metricField: {
-            in: ["avgLatencyMs", "errorRate", "avgCpu", "avgMemoryMb"],
-          },
         },
       });
 

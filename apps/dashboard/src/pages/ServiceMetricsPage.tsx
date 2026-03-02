@@ -2,14 +2,82 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getCurrentUser, isAuthenticated, logout } from '../services/auth';
 import {
+  AlertRule,
+  AlertOperator,
+  createAlertRule,
+  getAlertRules,
+  getProjectDetails,
   getRequestMetrics,
   getSystemMetrics,
   RequestMetricPoint,
+  setProjectSlackWebhook,
   SystemMetricPoint,
+  updateAlertRule,
 } from '../services/project';
 
-type TabType = 'system' | 'request';
+type TabType = 'system' | 'request' | 'alert';
 type TimeWindow = 'minutes' | 'hours' | 'day';
+
+const ALERT_OPERATORS: AlertOperator[] = ['>', '<'];
+const ALERT_WINDOW_OPTIONS = [
+  { label: '1 minute', value: 60 },
+  { label: '5 minutes', value: 300 },
+  { label: '10 minutes', value: 600 },
+  { label: '30 minutes', value: 1800 },
+  { label: '1 hour', value: 3600 },
+];
+
+const SYSTEM_ALERT_METRICS = [
+  { label: 'avgCpu', value: 'avgCpu' },
+  { label: 'avgMemoryMb', value: 'avgMemoryMb' },
+] as const;
+
+const REQUEST_ALERT_METRICS = [
+  { label: 'errorRate', value: 'errorRate' },
+  { label: 'avgLatencyMs', value: 'avgLatencyMs' },
+] as const;
+
+type SystemAlertMetricField = (typeof SYSTEM_ALERT_METRICS)[number]['value'];
+type RequestAlertMetricField = (typeof REQUEST_ALERT_METRICS)[number]['value'];
+type AlertMetricField = SystemAlertMetricField | RequestAlertMetricField;
+
+type ThresholdConfig = {
+  unit: string;
+  min: number;
+  max?: number;
+  step: number;
+};
+
+function getThresholdConfig(metricField: string): ThresholdConfig {
+  if (metricField === 'avgCpu' || metricField === 'errorRate') {
+    return { unit: '%', min: 0.1, max: 100, step: 0.1 };
+  }
+
+  if (metricField === 'avgMemoryMb') {
+    return { unit: 'MB', min: 0, step: 1 };
+  }
+
+  if (metricField === 'avgLatencyMs') {
+    return { unit: 'ms', min: 0, step: 1 };
+  }
+
+  return { unit: '', min: 0, step: 1 };
+}
+
+function normalizeThreshold(value: number, metricField: string): number {
+  const config = getThresholdConfig(metricField);
+
+  if (!Number.isFinite(value)) {
+    return config.min;
+  }
+
+  let normalized = Math.max(config.min, value);
+  if (config.max !== undefined) {
+    normalized = Math.min(config.max, normalized);
+  }
+
+  return normalized;
+}
 
 type UnitType = 'ms' | 'percent' | 'requests' | 'mb';
 
@@ -835,6 +903,26 @@ const ServiceMetricsPage: React.FC = () => {
   const [compareMode, setCompareMode] = useState(false);
   const [latencyThresholdMs, setLatencyThresholdMs] = useState(700);
   const [errorThresholdPercent, setErrorThresholdPercent] = useState(5);
+  const [projectSlackWebhookUrl, setProjectSlackWebhookUrl] = useState('');
+  const [pendingWebhookUrl, setPendingWebhookUrl] = useState('');
+  const [systemMetricField, setSystemMetricField] = useState<SystemAlertMetricField>('avgCpu');
+  const [systemOperator, setSystemOperator] = useState<AlertOperator>('>');
+  const [systemThreshold, setSystemThreshold] = useState(80);
+  const [systemWindowSec, setSystemWindowSec] = useState(300);
+  const [requestMetricField, setRequestMetricField] = useState<RequestAlertMetricField>('errorRate');
+  const [requestOperator, setRequestOperator] = useState<AlertOperator>('>');
+  const [requestThreshold, setRequestThreshold] = useState(5);
+  const [requestWindowSec, setRequestWindowSec] = useState(300);
+  const [requestEndpointRule, setRequestEndpointRule] = useState('all');
+  const [isAlertSubmitting, setIsAlertSubmitting] = useState(false);
+  const [alertSuccess, setAlertSuccess] = useState('');
+  const [alertError, setAlertError] = useState('');
+  const [alertRules, setAlertRules] = useState<AlertRule[]>([]);
+  const [isAlertRulesLoading, setIsAlertRulesLoading] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [editingRuleMetricField, setEditingRuleMetricField] = useState<AlertMetricField>('avgCpu');
+  const [editingThreshold, setEditingThreshold] = useState(0);
+  const [editingWindowSec, setEditingWindowSec] = useState(300);
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -884,6 +972,172 @@ const ServiceMetricsPage: React.FC = () => {
   const handleLogout = () => {
     logout();
     navigate('/');
+  };
+
+  const loadAlertRules = async () => {
+    if (!projectId || !decodedServiceName) {
+      return;
+    }
+
+    try {
+      setIsAlertRulesLoading(true);
+      const rules = await getAlertRules(projectId, decodedServiceName);
+      setAlertRules(rules || []);
+    } catch (err: any) {
+      setAlertError(err.message || 'Failed to fetch alert rules');
+    } finally {
+      setIsAlertRulesLoading(false);
+    }
+  };
+
+  const loadProjectWebhook = async () => {
+    if (!projectId) {
+      return;
+    }
+
+    try {
+      const project = await getProjectDetails(projectId);
+      const webhook = (project as any).slackWebhookUrl || '';
+      setProjectSlackWebhookUrl(webhook);
+    } catch (err: any) {
+      setAlertError(err.message || 'Failed to fetch project webhook');
+    }
+  };
+
+  const saveProjectWebhook = async () => {
+    if (!projectId || !pendingWebhookUrl.trim()) {
+      return;
+    }
+
+    try {
+      setIsAlertSubmitting(true);
+      setAlertError('');
+      setAlertSuccess('');
+
+      const updatedProject = await setProjectSlackWebhook(projectId, pendingWebhookUrl.trim());
+      setProjectSlackWebhookUrl((updatedProject as any).slackWebhookUrl || pendingWebhookUrl.trim());
+      setPendingWebhookUrl('');
+      setAlertSuccess('Project Slack webhook saved successfully.');
+    } catch (err: any) {
+      setAlertError(err.message || 'Failed to save project Slack webhook');
+    } finally {
+      setIsAlertSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'alert') {
+      loadAlertRules();
+      loadProjectWebhook();
+    }
+  }, [activeTab, projectId, decodedServiceName]);
+
+  const beginEditRule = (rule: AlertRule) => {
+    setEditingRuleId(rule.id);
+    setEditingRuleMetricField(rule.metricField as AlertMetricField);
+    setEditingThreshold(rule.threshold);
+    setEditingWindowSec(rule.windowSec);
+    setAlertError('');
+    setAlertSuccess('');
+  };
+
+  const saveEditedRule = async () => {
+    if (!editingRuleId) {
+      return;
+    }
+
+    if (!projectSlackWebhookUrl.trim()) {
+      setAlertError('Set project Slack webhook first.');
+      return;
+    }
+
+    try {
+      setIsAlertSubmitting(true);
+      setAlertError('');
+      setAlertSuccess('');
+
+      await updateAlertRule(editingRuleId, {
+        threshold: normalizeThreshold(editingThreshold, editingRuleMetricField),
+        windowSec: editingWindowSec,
+      });
+
+      setAlertSuccess('Alert rule updated successfully.');
+      setEditingRuleId(null);
+      await loadAlertRules();
+    } catch (err: any) {
+      setAlertError(err.message || 'Failed to update alert rule');
+    } finally {
+      setIsAlertSubmitting(false);
+    }
+  };
+
+  const createSystemAlertRule = async () => {
+    if (!projectId || !decodedServiceName) {
+      return;
+    }
+
+    if (!projectSlackWebhookUrl.trim()) {
+      setAlertError('Set project Slack webhook first.');
+      return;
+    }
+
+    try {
+      setIsAlertSubmitting(true);
+      setAlertError('');
+      setAlertSuccess('');
+
+      await createAlertRule({
+        projectId,
+        serviceName: decodedServiceName,
+        metricType: 'system',
+        metricField: systemMetricField as any,
+        operator: systemOperator,
+        threshold: normalizeThreshold(systemThreshold, systemMetricField),
+        windowSec: systemWindowSec,
+      });
+
+      setAlertSuccess('System alert rule created successfully.');
+      await loadAlertRules();
+    } catch (err: any) {
+      setAlertError(err.message || 'Failed to create system alert rule');
+    } finally {
+      setIsAlertSubmitting(false);
+    }
+  };
+
+  const createRequestAlertRule = async () => {
+    if (!projectId || !decodedServiceName) {
+      return;
+    }
+
+    if (!projectSlackWebhookUrl.trim()) {
+      setAlertError('Set project Slack webhook first.');
+      return;
+    }
+
+    try {
+      setIsAlertSubmitting(true);
+      setAlertError('');
+      setAlertSuccess('');
+
+      await createAlertRule({
+        projectId,
+        serviceName: decodedServiceName,
+        metricType: 'request',
+        metricField: requestMetricField as any,
+        operator: requestOperator,
+        threshold: normalizeThreshold(requestThreshold, requestMetricField),
+        windowSec: requestWindowSec,
+        endpoint: requestEndpointRule === 'all' ? undefined : requestEndpointRule,
+      });
+
+      setAlertSuccess('Request alert rule created successfully.');
+      await loadAlertRules();
+    } catch (err: any) {
+      setAlertError(err.message || 'Failed to create request alert rule');
+    } finally {
+      setIsAlertSubmitting(false);
+    }
   };
 
   const endpointAggregates = useMemo<EndpointAggregate[]>(() => {
@@ -965,6 +1219,14 @@ const ServiceMetricsPage: React.FC = () => {
       setEndpointFilter('all');
     }
   }, [endpointFilter, endpointOptions]);
+
+  useEffect(() => {
+    setSystemThreshold((prev) => normalizeThreshold(prev, systemMetricField));
+  }, [systemMetricField]);
+
+  useEffect(() => {
+    setRequestThreshold((prev) => normalizeThreshold(prev, requestMetricField));
+  }, [requestMetricField]);
 
   const expectedBuckets = useMemo(() => {
     return buildExpectedBuckets(timeRange.from, timeRange.to, getBucketIntervalMs(timeWindow));
@@ -1164,6 +1426,14 @@ const ServiceMetricsPage: React.FC = () => {
           >
             Request Metrics
           </button>
+          <button
+            onClick={() => setActiveTab('alert')}
+            className={`w-full text-left px-4 py-3 border-2 border-ink font-bold text-base uppercase tracking-wide transition-colors ${
+              activeTab === 'alert' ? 'bg-primary text-white shadow-hard' : 'bg-white text-ink hover:bg-paper'
+            }`}
+          >
+            Alert Engine
+          </button>
         </nav>
 
         <div className="p-4 border-t-2 border-ink space-y-2">
@@ -1297,7 +1567,7 @@ const ServiceMetricsPage: React.FC = () => {
                 )}
               </div>
             </section>
-          ) : (
+          ) : activeTab === 'request' ? (
             <section className="space-y-6">
               <h2 className="text-xl font-black uppercase tracking-tight">Request Metrics</h2>
               <div className="bg-white border-2 border-ink p-5 shadow-hard">
@@ -1494,6 +1764,320 @@ const ServiceMetricsPage: React.FC = () => {
                         <div className="col-span-2">{row.successCount}</div>
                         <div className="col-span-2">{row.clientErrorCount + row.serverErrorCount}</div>
                         <div className="col-span-2">{row.avgResponseTime.toFixed(2)} ms</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : (
+            <section className="space-y-6">
+              <h2 className="text-xl font-black uppercase tracking-tight">Alert Engine</h2>
+
+              <div className="bg-white border-2 border-ink p-5 shadow-hard">
+                <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Project Slack Webhook URL</label>
+                {projectSlackWebhookUrl ? (
+                  <div className="w-full border-2 border-ink bg-paper px-3 py-2 text-sm font-mono text-ink/80 break-all">
+                    {projectSlackWebhookUrl}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={pendingWebhookUrl}
+                      onChange={(event) => setPendingWebhookUrl(event.target.value)}
+                      placeholder="https://hooks.slack.com/services/..."
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    />
+                    <button
+                      onClick={saveProjectWebhook}
+                      disabled={isAlertSubmitting || !pendingWebhookUrl.trim()}
+                      className="px-4 py-2 border-2 border-ink bg-primary text-white font-bold text-sm uppercase tracking-wide disabled:opacity-60"
+                    >
+                      {isAlertSubmitting ? 'Saving...' : 'Save Webhook'}
+                    </button>
+                  </div>
+                )}
+                <p className="mt-2 text-xs font-bold text-ink/60 uppercase tracking-wide">
+                  Webhook is configured once per project and used for all alert rules.
+                </p>
+              </div>
+
+              {alertSuccess && (
+                <div className="bg-white border-2 border-ink p-4 text-green-700 font-bold">{alertSuccess}</div>
+              )}
+              {alertError && (
+                <div className="bg-white border-2 border-ink p-4 text-red-600 font-bold">{alertError}</div>
+              )}
+
+              <div className="bg-white border-2 border-ink shadow-hard">
+                <div className="border-b-2 border-ink p-5 bg-paper">
+                  <h3 className="text-lg font-black uppercase tracking-tight">System Metric Rule</h3>
+                </div>
+                <div className="p-5 grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Metric</label>
+                    <select
+                      value={systemMetricField}
+                      onChange={(event) => setSystemMetricField(event.target.value as SystemAlertMetricField)}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    >
+                      {SYSTEM_ALERT_METRICS.map((metric) => (
+                        <option key={metric.value} value={metric.value}>{metric.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Operator</label>
+                    <select
+                      value={systemOperator}
+                      onChange={(event) => setSystemOperator(event.target.value as AlertOperator)}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    >
+                      {ALERT_OPERATORS.map((op) => (
+                        <option key={op} value={op}>{op}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">
+                      Threshold ({getThresholdConfig(systemMetricField).unit || 'value'})
+                    </label>
+                    <input
+                      type="number"
+                      value={systemThreshold}
+                      min={getThresholdConfig(systemMetricField).min}
+                      max={getThresholdConfig(systemMetricField).max}
+                      step={getThresholdConfig(systemMetricField).step}
+                      onChange={(event) => setSystemThreshold(Number(event.target.value))}
+                      onBlur={() => setSystemThreshold((prev) => normalizeThreshold(prev, systemMetricField))}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    />
+                    <p className="mt-1 text-xs font-bold text-ink/60 uppercase tracking-wide">
+                      Min {getThresholdConfig(systemMetricField).min}
+                      {getThresholdConfig(systemMetricField).max !== undefined ? ` · Max ${getThresholdConfig(systemMetricField).max}` : ''}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Window</label>
+                    <select
+                      value={systemWindowSec}
+                      onChange={(event) => setSystemWindowSec(Number(event.target.value))}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    >
+                      {ALERT_WINDOW_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="px-5 pb-5">
+                  <button
+                    onClick={createSystemAlertRule}
+                    disabled={isAlertSubmitting || !projectSlackWebhookUrl.trim()}
+                    className="px-4 py-2 border-2 border-ink bg-primary text-white font-bold text-sm uppercase tracking-wide disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isAlertSubmitting ? 'Creating...' : 'Create System Rule'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white border-2 border-ink shadow-hard">
+                <div className="border-b-2 border-ink p-5 bg-paper">
+                  <h3 className="text-lg font-black uppercase tracking-tight">Request Metric Rule</h3>
+                </div>
+                <div className="p-5 grid grid-cols-1 md:grid-cols-5 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Metric</label>
+                    <select
+                      value={requestMetricField}
+                      onChange={(event) => setRequestMetricField(event.target.value as RequestAlertMetricField)}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    >
+                      {REQUEST_ALERT_METRICS.map((metric) => (
+                        <option key={metric.value} value={metric.value}>{metric.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Operator</label>
+                    <select
+                      value={requestOperator}
+                      onChange={(event) => setRequestOperator(event.target.value as AlertOperator)}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    >
+                      {ALERT_OPERATORS.map((op) => (
+                        <option key={op} value={op}>{op}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">
+                      Threshold ({getThresholdConfig(requestMetricField).unit || 'value'})
+                    </label>
+                    <input
+                      type="number"
+                      value={requestThreshold}
+                      min={getThresholdConfig(requestMetricField).min}
+                      max={getThresholdConfig(requestMetricField).max}
+                      step={getThresholdConfig(requestMetricField).step}
+                      onChange={(event) => setRequestThreshold(Number(event.target.value))}
+                      onBlur={() => setRequestThreshold((prev) => normalizeThreshold(prev, requestMetricField))}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    />
+                    <p className="mt-1 text-xs font-bold text-ink/60 uppercase tracking-wide">
+                      Min {getThresholdConfig(requestMetricField).min}
+                      {getThresholdConfig(requestMetricField).max !== undefined ? ` · Max ${getThresholdConfig(requestMetricField).max}` : ''}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Window</label>
+                    <select
+                      value={requestWindowSec}
+                      onChange={(event) => setRequestWindowSec(Number(event.target.value))}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    >
+                      {ALERT_WINDOW_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold uppercase tracking-wide text-ink/70 mb-2">Endpoint (optional)</label>
+                    <select
+                      value={requestEndpointRule}
+                      onChange={(event) => setRequestEndpointRule(event.target.value)}
+                      className="w-full border-2 border-ink bg-white px-3 py-2 text-base font-mono"
+                    >
+                      <option value="all">All Endpoints</option>
+                      {endpointOptions.map((endpoint) => (
+                        <option key={endpoint} value={endpoint}>
+                          {endpoint}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="px-5 pb-5">
+                  <button
+                    onClick={createRequestAlertRule}
+                    disabled={isAlertSubmitting || !projectSlackWebhookUrl.trim()}
+                    className="px-4 py-2 border-2 border-ink bg-primary text-white font-bold text-sm uppercase tracking-wide disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isAlertSubmitting ? 'Creating...' : 'Create Request Rule'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-white border-2 border-ink shadow-hard">
+                <div className="border-b-2 border-ink p-5 bg-paper flex items-center justify-between">
+                  <h3 className="text-lg font-black uppercase tracking-tight">Existing Alert Rules</h3>
+                  <button
+                    onClick={loadAlertRules}
+                    className="px-3 py-2 border-2 border-ink bg-white hover:bg-paper font-bold text-xs uppercase tracking-wide"
+                  >
+                    Refresh
+                  </button>
+                </div>
+
+                {isAlertRulesLoading ? (
+                  <div className="p-5 text-sm font-bold text-ink/60">Loading alert rules...</div>
+                ) : alertRules.length === 0 ? (
+                  <div className="p-5 text-sm font-bold text-ink/60">No alert rules found for this service.</div>
+                ) : (
+                  <div className="divide-y-2 divide-ink">
+                    {alertRules.map((rule) => (
+                      <div key={rule.id} className="p-5 space-y-4 bg-white">
+                        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 text-sm font-mono text-ink/80">
+                          <div className="border-2 border-ink bg-paper px-3 py-2">
+                            <div className="text-[10px] uppercase font-bold text-ink/60">Type</div>
+                            <div className="font-bold">{rule.metricType}</div>
+                          </div>
+                          <div className="border-2 border-ink bg-paper px-3 py-2">
+                            <div className="text-[10px] uppercase font-bold text-ink/60">Metric</div>
+                            <div className="font-bold">{rule.metricField}</div>
+                          </div>
+                          <div className="border-2 border-ink bg-paper px-3 py-2">
+                            <div className="text-[10px] uppercase font-bold text-ink/60">Condition</div>
+                            <div className="font-bold">{rule.operator} {rule.threshold}</div>
+                          </div>
+                          <div className="border-2 border-ink bg-paper px-3 py-2">
+                            <div className="text-[10px] uppercase font-bold text-ink/60">Window</div>
+                            <div className="font-bold">{ALERT_WINDOW_OPTIONS.find((w) => w.value === rule.windowSec)?.label || `${rule.windowSec}s`}</div>
+                          </div>
+                          <div className="border-2 border-ink bg-paper px-3 py-2">
+                            <div className="text-[10px] uppercase font-bold text-ink/60">Endpoint</div>
+                            <div className="font-bold">{rule.endpoint || 'All Endpoints'}</div>
+                          </div>
+                          <div className="border-2 border-ink bg-paper px-3 py-2">
+                            <div className="text-[10px] uppercase font-bold text-ink/60">Status</div>
+                            <div className="font-bold">{rule.isActive ? 'Active' : 'Inactive'}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => beginEditRule(rule)}
+                            className="px-3 py-2 border-2 border-ink bg-white hover:bg-paper font-bold text-xs uppercase tracking-wide"
+                          >
+                            Edit
+                          </button>
+                        </div>
+
+                        {editingRuleId === rule.id && (
+                          <div className="p-4 border-2 border-ink bg-paper space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-bold uppercase tracking-wide text-ink/70 mb-2">
+                                  Threshold ({getThresholdConfig(editingRuleMetricField).unit || 'value'})
+                                </label>
+                                <input
+                                  type="number"
+                                  value={editingThreshold}
+                                  min={getThresholdConfig(editingRuleMetricField).min}
+                                  max={getThresholdConfig(editingRuleMetricField).max}
+                                  step={getThresholdConfig(editingRuleMetricField).step}
+                                  onChange={(event) => setEditingThreshold(Number(event.target.value))}
+                                  onBlur={() =>
+                                    setEditingThreshold((prev) => normalizeThreshold(prev, editingRuleMetricField))
+                                  }
+                                  className="w-full border-2 border-ink bg-white px-3 py-2 text-sm font-mono"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-bold uppercase tracking-wide text-ink/70 mb-2">
+                                  Window
+                                </label>
+                                <select
+                                  value={editingWindowSec}
+                                  onChange={(event) => setEditingWindowSec(Number(event.target.value))}
+                                  className="w-full border-2 border-ink bg-white px-3 py-2 text-sm font-mono"
+                                >
+                                  {ALERT_WINDOW_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <button
+                                onClick={saveEditedRule}
+                                disabled={isAlertSubmitting || !projectSlackWebhookUrl.trim()}
+                                className="px-3 py-2 border-2 border-ink bg-primary text-white font-bold text-xs uppercase tracking-wide disabled:opacity-60"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingRuleId(null)}
+                                className="px-3 py-2 border-2 border-ink bg-white hover:bg-paper font-bold text-xs uppercase tracking-wide"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

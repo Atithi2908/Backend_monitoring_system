@@ -210,3 +210,53 @@ export async function updateProjectStatus(req: AuthRequest, res: Response) {
     return res.status(500).json({ error: "Failed to update project status" });
   }
 }
+
+export async function setProjectSlackWebhook(req: AuthRequest, res: Response) {
+  try {
+    const userId = await resolveEffectiveUserId(req);
+    const { projectId } = req.params;
+    const webhookUrl = String(req.body?.slackWebhookUrl || "").trim();
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!webhookUrl) {
+      return res.status(400).json({ error: "slackWebhookUrl is required" });
+    }
+
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        userId,
+      },
+      select: {
+        id: true,
+        slackWebhookUrl: true,
+      },
+    });
+
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    if (project.slackWebhookUrl) {
+      return res.status(409).json({ error: "Slack webhook already configured for this project" });
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        ...( { slackWebhookUrl: webhookUrl } as Record<string, string> ),
+      } as any,
+    });
+
+    return res.json({
+      message: "Slack webhook configured successfully",
+      project: updatedProject,
+    });
+  } catch (error) {
+    console.error("Set project slack webhook error:", error);
+    return res.status(500).json({ error: "Failed to set project slack webhook" });
+  }
+}
