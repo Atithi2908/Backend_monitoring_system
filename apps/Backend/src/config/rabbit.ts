@@ -2,12 +2,14 @@ import amqp from "amqplib";
 
 let channel: amqp.Channel;
 
+const rabbitmqUrl = process.env.RABBITMQ_URL || "amqp://localhost";
+
 export const METRICS_EXCHANGE = "metrics_exchange";
 export const METRICS_QUEUE = "metrics_queue";
 export const METRIC_ROUTING_KEY = "metric";
 
 export async function connectRabbit() {
-  const connection = await amqp.connect("amqp://localhost");
+  const connection = await amqp.connect(rabbitmqUrl);
 
   channel = await connection.createChannel();
 

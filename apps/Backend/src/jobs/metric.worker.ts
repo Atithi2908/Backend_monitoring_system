@@ -5,15 +5,17 @@ import {
   METRICS_QUEUE,
   METRIC_ROUTING_KEY,
 } from "../config/rabbit";
-import { MetricType, RequestMetric, SystemMetric } from "shared-types";
+import { MetricType, RequestMetric, SystemMetric } from "../types/metric.types";
 
 type QueuedMetric = {
   projectId: string;
   metric: RequestMetric | SystemMetric;
 };
 
+const rabbitmqUrl = process.env.RABBITMQ_URL || "amqp://localhost";
+
 export async function startMetricWorker() {
-  const connection = await amqp.connect("amqp://localhost");
+  const connection = await amqp.connect(rabbitmqUrl);
   const channel = await connection.createChannel();
 
   await channel.assertExchange(METRICS_EXCHANGE, "direct", {

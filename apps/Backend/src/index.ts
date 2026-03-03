@@ -14,8 +14,19 @@ import alertRouter from "./routes/alert";
 import { startAlertEvaluationJob } from "./jobs/alertEvaluator";
 const app = express();
 
+const defaultCorsOrigins = [
+  "http://localhost",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://localhost:8080",
+];
+
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)
+  : defaultCorsOrigins;
+
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  origin: corsOrigins,
   credentials: true,
 }));
 
@@ -29,9 +40,11 @@ app.use("/metrics", metricsRouter);
 app.use("/create", setupRouter);
 app.use("/alerts", alertRouter);
 
-const PORT = 4000;
-app.listen(PORT, async () => {
-  console.log(`Collector running on port ${PORT}`);
+const PORT = Number(process.env.PORT || 4000);
+const HOST = process.env.HOST || "0.0.0.0";
+
+app.listen(PORT, HOST, async () => {
+  console.log(`Collector running on ${HOST}:${PORT}`);
   await connectRabbit();
   await startMetricWorker();
   startAggregationJob();

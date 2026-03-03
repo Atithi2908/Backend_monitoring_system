@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
-import { monitorMiddleware, startSystemMetrics } from "monitoring-sdk";
+import { monitorMiddleware, startSystemMetrics } from "backend-monitoring-sdk";
 import dotenv from "dotenv";
 
 

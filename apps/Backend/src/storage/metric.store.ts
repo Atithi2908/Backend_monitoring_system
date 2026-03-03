@@ -1,4 +1,4 @@
-import { RequestMetric, SystemMetric } from "shared-types";
+import { RequestMetric, SystemMetric } from "../types/metric.types";
 
 export type StoredMetric =
   | {

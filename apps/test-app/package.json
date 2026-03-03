@@ -10,7 +10,7 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
-    "monitoring-sdk": "workspace:*"
+    "backend-monitoring-sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
