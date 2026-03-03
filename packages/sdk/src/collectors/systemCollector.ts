@@ -1,4 +1,4 @@
-import { MetricType, SystemMetric } from "shared-types";
+import { MetricType, SystemMetric } from "../types";
 import { SdkConfig } from "../config/sdkConfig";
 import {
   getCpuUsagePercent,

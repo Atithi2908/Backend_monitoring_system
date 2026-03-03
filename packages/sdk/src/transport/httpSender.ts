@@ -1,4 +1,4 @@
-import type { BaseMetric } from "shared-types";
+import type { BaseMetric } from "../types";
 import type { SdkConfig } from "../config/sdkConfig";
 export async function sendMetric(
   config: SdkConfig,

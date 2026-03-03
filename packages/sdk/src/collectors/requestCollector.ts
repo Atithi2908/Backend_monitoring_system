@@ -1,4 +1,4 @@
-import { RequestMetric, MetricType } from "shared-types";
+import { RequestMetric, MetricType } from "../types";
 import { SdkConfig } from "../config/sdkConfig";
 
 export function collectRequestMetric(
