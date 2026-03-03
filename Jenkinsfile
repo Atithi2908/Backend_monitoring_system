@@ -1,30 +1,39 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'docker:27-cli'
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     stages {
 
-        stage('Checkout') {
+        stage('Checkout Code') {
             steps {
                 checkout scm
             }
         }
 
-        stage('Verify Docker Access') {
+        stage('Verify Docker') {
             steps {
                 sh 'docker version'
             }
         }
 
-        stage('Build Images') {
+        stage('Build Backend Image') {
             steps {
-                sh 'docker compose build'
+                sh 'docker build -t backend-monitoring-backend ./backend'
             }
         }
 
-        stage('Run Containers') {
-            steps {
-                sh 'docker compose up -d'
-            }
+    }
+
+    post {
+        success {
+            echo 'Build completed successfully 🚀'
+        }
+        failure {
+            echo 'Build failed ❌'
         }
     }
 }
