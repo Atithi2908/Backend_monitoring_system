@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'docker:27-cli'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
 
     stages {
 
@@ -20,9 +15,9 @@ pipeline {
             }
         }
 
-        stage('Build Backend Image') {
+        stage('Build Docker Images') {
             steps {
-                sh 'docker build -t backend-monitoring-backend ./backend'
+                sh 'docker compose build'
             }
         }
 
