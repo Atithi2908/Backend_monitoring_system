@@ -25,12 +25,7 @@ pipeline {
             steps {
                 sshagent(['ec2-ssh']) {
                     sh '''
-                    ssh -o StrictHostKeyChecking=no ubuntu@16.170.173.185 << EOF
-                        cd app &&
-                        git pull origin main &&
-                        docker-compose down &&
-                        docker-compose up -d --build
-                    "
+                     ssh -o StrictHostKeyChecking=no ubuntu@16.170.173.185 "cd app && git pull origin main && docker-compose down && docker-compose up -d --build"
                     '''
                 }
             }
