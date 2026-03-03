@@ -60,15 +60,15 @@ const LandingPage: React.FC = () => {
           </div>
 
           <div className="hidden md:flex items-center gap-8">
-            <a href="#" className="text-sm font-semibold uppercase tracking-wider hover:text-primary transition-colors cursor-pointer">
+            <button onClick={() => navigate('/docs')} className="text-sm font-semibold uppercase tracking-wider hover:text-primary transition-colors cursor-pointer">
               Documentation
-            </a>
-            <a href="#" className="text-sm font-semibold uppercase tracking-wider hover:text-primary transition-colors cursor-pointer">
+            </button>
+            <button onClick={() => navigate('/pricing')} className="text-sm font-semibold uppercase tracking-wider hover:text-primary transition-colors cursor-pointer">
               Pricing
-            </a>
-            <a href="#" className="text-sm font-semibold uppercase tracking-wider hover:text-primary transition-colors cursor-pointer">
+            </button>
+            <button onClick={() => navigate('/api')} className="text-sm font-semibold uppercase tracking-wider hover:text-primary transition-colors cursor-pointer">
               API Ref
-            </a>
+            </button>
           </div>
 
           <div className="flex items-center gap-4">
@@ -129,7 +129,7 @@ const LandingPage: React.FC = () => {
                 View Home
               </button>
               <button 
-                onClick={() => navigate('/home')}
+                onClick={() => navigate('/api')}
                 className="bg-white text-ink px-8 py-4 text-base font-bold uppercase tracking-wide shadow-hard border-2 border-ink hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all"
               >
                 Explore API
@@ -334,18 +334,18 @@ const LandingPage: React.FC = () => {
               </h3>
               <ul className="space-y-3">
                 <li>
-                  <a href="#" className="text-sm text-paper/80 hover:text-primary-bright transition-colors">
+                  <a href="/docs" className="text-sm text-paper/80 hover:text-primary-bright transition-colors">
                     Documentation
                   </a>
                 </li>
                 <li>
-                  <a href="#" className="text-sm text-paper/80 hover:text-primary-bright transition-colors">
+                  <a href="/api" className="text-sm text-paper/80 hover:text-primary-bright transition-colors">
                     API Reference
                   </a>
                 </li>
                 <li>
-                  <a href="#" className="text-sm text-paper/80 hover:text-primary-bright transition-colors">
-                    Status Page
+                  <a href="/pricing" className="text-sm text-paper/80 hover:text-primary-bright transition-colors">
+                    Pricing
                   </a>
                 </li>
                 <li>
@@ -420,8 +420,14 @@ const LandingPage: React.FC = () => {
 
       {/* Auth Modal */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 backdrop-blur-sm p-4">
-          <div className="relative bg-white border-4 border-ink shadow-[12px_12px_0px_0px_rgba(15,23,42,1)] max-w-md w-full p-8 animate-in">
+        <div
+          onClick={() => setShowAuthModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 backdrop-blur-sm p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative bg-white border-4 border-ink shadow-[12px_12px_0px_0px_rgba(15,23,42,1)] max-w-sm w-full p-6 animate-in"
+          >
             
             {/* Close Button */}
             <button 

@@ -29,6 +29,7 @@ const Home: React.FC = () => {
   const [filterText, setFilterText] = useState('');
   const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
   const [actionProjectId, setActionProjectId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'home' | 'collaborator' | 'documentation'>('home');
 
   useEffect(() => {
     if (!openMenuProjectId) return;
@@ -170,6 +171,20 @@ const Home: React.FC = () => {
     `${p.name} ${p.description ?? ''}`.toLowerCase().includes(filterText.toLowerCase())
   );
 
+  const pageTitle =
+    activeTab === 'home'
+      ? 'Home'
+      : activeTab === 'collaborator'
+      ? 'Add Collaborator'
+      : 'Documentation';
+
+  const pageSubtitle =
+    activeTab === 'home'
+      ? 'Manage and monitor your backend services'
+      : activeTab === 'collaborator'
+      ? 'Invite teammates to collaborate on projects'
+      : 'SDK setup and dashboard usage guide';
+
   return (
     <div className="min-h-screen bg-paper text-ink flex">
       {/* Sidebar */}
@@ -188,22 +203,34 @@ const Home: React.FC = () => {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-2">
-          <button className="w-full text-left px-4 py-3 bg-primary text-white border-2 border-ink shadow-hard font-bold text-sm uppercase tracking-wide">
+          <button
+            onClick={() => setActiveTab('home')}
+            className={`w-full text-left px-4 py-3 border-2 border-ink font-bold text-sm uppercase tracking-wide transition-colors ${
+              activeTab === 'home'
+                ? 'bg-primary text-white shadow-hard'
+                : 'bg-white hover:bg-paper'
+            }`}
+          >
             Home
           </button>
-          <button className="w-full text-left px-4 py-3 bg-white hover:bg-paper border-2 border-ink font-bold text-sm uppercase tracking-wide transition-colors">
-            Global Alerts
+          <button
+            onClick={() => setActiveTab('collaborator')}
+            className={`w-full text-left px-4 py-3 border-2 border-ink font-bold text-sm uppercase tracking-wide transition-colors ${
+              activeTab === 'collaborator'
+                ? 'bg-primary text-white shadow-hard'
+                : 'bg-white hover:bg-paper'
+            }`}
+          >
+            Add Collaborator
           </button>
-          <button className="w-full text-left px-4 py-3 bg-white hover:bg-paper border-2 border-ink font-bold text-sm uppercase tracking-wide transition-colors">
-            Integrations
-          </button>
-          <button className="w-full text-left px-4 py-3 bg-white hover:bg-paper border-2 border-ink font-bold text-sm uppercase tracking-wide transition-colors">
-            Analytics
-          </button>
-          <button className="w-full text-left px-4 py-3 bg-white hover:bg-paper border-2 border-ink font-bold text-sm uppercase tracking-wide transition-colors">
-            Org Settings
-          </button>
-          <button className="w-full text-left px-4 py-3 bg-white hover:bg-paper border-2 border-ink font-bold text-sm uppercase tracking-wide transition-colors">
+          <button
+            onClick={() => setActiveTab('documentation')}
+            className={`w-full text-left px-4 py-3 border-2 border-ink font-bold text-sm uppercase tracking-wide transition-colors ${
+              activeTab === 'documentation'
+                ? 'bg-primary text-white shadow-hard'
+                : 'bg-white hover:bg-paper'
+            }`}
+          >
             Documentation
           </button>
         </nav>
@@ -236,34 +263,38 @@ const Home: React.FC = () => {
         <header className="bg-white border-b-4 border-ink px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-black uppercase tracking-tight mb-1">Home</h1>
+              <h1 className="text-3xl font-black uppercase tracking-tight mb-1">{pageTitle}</h1>
               <p className="text-sm text-ink/60 font-mono">
-                Manage and monitor your backend services
+                {pageSubtitle}
               </p>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="bg-primary text-white px-6 py-3 border-2 border-ink shadow-hard font-bold text-sm uppercase tracking-wide hover:bg-primary-bright transition-colors"
-            >
-              + New Project
-            </button>
+            {activeTab === 'home' && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="bg-primary text-white px-6 py-3 border-2 border-ink shadow-hard font-bold text-sm uppercase tracking-wide hover:bg-primary-bright transition-colors"
+              >
+                + New Project
+              </button>
+            )}
           </div>
 
           {/* Search/Filter Bar */}
-          <div className="mt-6">
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-ink shadow-hard text-sm font-mono focus:outline-none focus:border-primary"
-            />
-          </div>
+          {activeTab === 'home' && (
+            <div className="mt-6">
+              <input
+                type="text"
+                placeholder="Search projects..."
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-ink shadow-hard text-sm font-mono focus:outline-none focus:border-primary"
+              />
+            </div>
+          )}
         </header>
 
         {/* Projects Grid */}
         <main className="flex-1 overflow-auto p-8">
-          {loading ? (
+          {activeTab === 'home' && (loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
                 <div className="inline-block w-12 h-12 border-4 border-ink border-t-primary animate-spin"></div>
@@ -419,6 +450,41 @@ const Home: React.FC = () => {
                   Create a new project to track
                 </p>
               </div>
+            </div>
+          ))}
+
+          {activeTab === 'collaborator' && (
+            <div className="max-w-3xl mx-auto">
+              <section className="bg-white border-2 border-ink shadow-hard p-8 text-center">
+                <h2 className="text-2xl font-black uppercase tracking-tight mb-3">Add Collaborator</h2>
+                <p className="text-sm text-ink/70 font-mono">Feature building soon.</p>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'documentation' && (
+            <div className="max-w-4xl mx-auto space-y-6">
+              <section className="bg-white border-2 border-ink shadow-hard p-6">
+                <h2 className="text-xl font-black uppercase mb-3">Step 1: Install SDK</h2>
+                <pre className="bg-paper border border-ink p-3 text-xs overflow-x-auto">pnpm add backend-monitoring-sdk</pre>
+              </section>
+
+              <section className="bg-white border-2 border-ink shadow-hard p-6">
+                <h2 className="text-xl font-black uppercase mb-3">Step 2: Import in Express</h2>
+                <pre className="bg-paper border border-ink p-3 text-xs overflow-x-auto">{`import express from "express";\nimport { monitorMiddleware, startSystemMetrics } from "backend-monitoring-sdk";`}</pre>
+              </section>
+
+              <section className="bg-white border-2 border-ink shadow-hard p-6">
+                <h2 className="text-xl font-black uppercase mb-3">Step 3: Configure API key</h2>
+                <pre className="bg-paper border border-ink p-3 text-xs overflow-x-auto">{`const config = {\n  serviceName: "orders-service",\n  collectorUrl: "http://localhost:4000/collect",\n  apiKey: process.env.BM_API_KEY || "",\n};\n\napp.use(monitorMiddleware(config));\nstartSystemMetrics(config, 10000);`}</pre>
+              </section>
+
+              <section className="bg-white border-2 border-ink shadow-hard p-6">
+                <h2 className="text-xl font-black uppercase mb-3">Step 4: Monitor on dashboard</h2>
+                <p className="text-sm text-ink/70 leading-relaxed">
+                  Create a project, copy API key, send traffic from your service, then open project dashboards to monitor request and system metrics.
+                </p>
+              </section>
             </div>
           )}
         </main>

@@ -5,6 +5,9 @@ import HomePage from './pages/HomePage';
 import Home from './pages/Dashboard';
 import ProjectDashboard from './pages/ProjectDashboard';
 import ServiceMetricsPage from './pages/ServiceMetricsPage';
+import ApiInfoPage from './pages/ApiInfoPage';
+import PricingPage from './pages/PricingPage';
+import DocumentationPage from './pages/DocumentationPage';
 
 function App() {
   return (
@@ -15,6 +18,9 @@ function App() {
         <Route path="/home" element={<Home />} />
         <Route path="/dashboard/:projectId" element={<ProjectDashboard />} />
         <Route path="/dashboard/:projectId/service/:serviceName" element={<ServiceMetricsPage />} />
+        <Route path="/docs" element={<DocumentationPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/api" element={<ApiInfoPage />} />
         <Route path="/dashboard" element={<Navigate to="/home" replace />} />
       </Routes>
     </Router>
