@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { login, signup } from "../services/auth";
+import { handleGoogleAuthCallbackFromUrl, login, signup, startGoogleAuth } from "../services/auth";
 
 const LandingPage: React.FC = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -11,6 +11,19 @@ const LandingPage: React.FC = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    try {
+      const completedGoogleAuth = handleGoogleAuthCallbackFromUrl();
+      if (completedGoogleAuth) {
+        navigate('/home', { replace: true });
+      }
+    } catch (err: any) {
+      setError(err.message || 'Google authentication failed');
+      setShowAuthModal(true);
+      setIsLogin(true);
+    }
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -460,8 +473,8 @@ const LandingPage: React.FC = () => {
             {/* Google Sign In Button */}
             <button 
               onClick={() => {
-                setShowAuthModal(false);
-                navigate('/home');
+                setError('');
+                startGoogleAuth(isLogin ? 'signin' : 'signup');
               }}
               className="w-full bg-ink text-white px-6 py-4 text-sm font-bold uppercase tracking-wide shadow-hard hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all mb-6 flex items-center justify-center gap-3"
             >

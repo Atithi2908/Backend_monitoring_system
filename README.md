@@ -111,7 +111,36 @@ Hit your Express routes (or run your test app/load script) so request + system m
 ### Auth
 - `POST /auth/signup`
 - `POST /auth/signin`
+- `GET /auth/google/start?mode=signin|signup`
+- `GET /auth/google/callback`
 - `GET /auth/me`
+
+## Google Sign Up / Sign In setup
+
+1) Create OAuth credentials in Google Cloud Console
+- Go to APIs & Services > Credentials.
+- Create OAuth client ID (Web application).
+- Add Authorized redirect URI:
+  - `http://localhost:4000/auth/google/callback`
+
+2) Configure backend environment variables
+
+```bash
+GOOGLE_CLIENT_ID=<google_oauth_client_id>
+GOOGLE_CLIENT_SECRET=<google_oauth_client_secret>
+GOOGLE_REDIRECT_URI=http://localhost:4000/auth/google/callback
+FRONTEND_AUTH_REDIRECT_URL=http://localhost:5173/
+```
+
+3) Ensure frontend calls the correct backend base URL
+
+```bash
+VITE_API_BASE_URL=http://localhost:4000
+```
+
+4) Use dashboard login modal
+- Click **Sign in with Google** or **Sign up with Google**.
+- The app redirects to Google, then back to backend callback, and finally to dashboard root with JWT/user payload.
 
 ### Project + setup
 - `POST /create/project` (returns primary API key)

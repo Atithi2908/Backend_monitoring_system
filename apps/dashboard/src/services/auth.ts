@@ -54,3 +54,46 @@ export function isAuthenticated() {
 export function getToken() {
   return localStorage.getItem('token');
 }
+
+export function startGoogleAuth(mode: 'signin' | 'signup') {
+  window.location.href = `${API_BASE_URL}/auth/google/start?mode=${mode}`;
+}
+
+export function handleGoogleAuthCallbackFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  const user = params.get('user');
+  const authError = params.get('authError');
+
+  if (authError) {
+    params.delete('authError');
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}`;
+    window.history.replaceState({}, '', nextUrl);
+    throw new Error(authError);
+  }
+
+  if (!token || !user) {
+    return false;
+  }
+
+  let parsedUser: { id: string; email: string; name: string };
+  try {
+    const normalizedUser = user.replace(/-/g, '+').replace(/_/g, '/');
+    const paddedUser = normalizedUser.padEnd(normalizedUser.length + ((4 - normalizedUser.length % 4) % 4), '=');
+    parsedUser = JSON.parse(atob(paddedUser));
+  } catch {
+    throw new Error('Invalid Google authentication payload');
+  }
+
+  localStorage.setItem('token', token);
+  localStorage.setItem('user', JSON.stringify(parsedUser));
+
+  params.delete('token');
+  params.delete('user');
+  const nextQuery = params.toString();
+  const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}`;
+  window.history.replaceState({}, '', nextUrl);
+
+  return true;
+}
