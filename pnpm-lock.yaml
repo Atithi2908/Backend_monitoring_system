@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      backend-monitoring-sdk:
+        specifier: ^0.1.0
+        version: 0.1.0
     devDependencies:
       turbo:
         specifier: ^2.7.5
@@ -878,6 +882,9 @@ packages:
     hasBin: true
     peerDependencies:
       postcss: ^8.1.0
+
+  backend-monitoring-sdk@0.1.0:
+    resolution: {integrity: sha512-vt1kpTWiIP0piITWK33mts3C0MVJrAPyNHfe9TBUmrfUHPXgBfwULUowpFz2Iv8+zq9Y1UB4Z8cKv8Ps379BHQ==}
 
   baseline-browser-mapping@2.10.0:
     resolution: {integrity: sha512-lIyg0szRfYbiy67j9KN8IyeD7q7hcmqnJ1ddWmNt19ItGpNN64mnllmxUNFIOdOm6by97jlL6wfpTTJrmnjWAA==}
@@ -2381,6 +2388,8 @@ snapshots:
       picocolors: 1.1.1
       postcss: 8.5.6
       postcss-value-parser: 4.2.0
+
+  backend-monitoring-sdk@0.1.0: {}
 
   baseline-browser-mapping@2.10.0: {}
 
