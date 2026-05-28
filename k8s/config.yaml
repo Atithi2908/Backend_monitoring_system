@@ -13,4 +13,4 @@ metadata:
   name: monitoring-secret
 type: Opaque
 stringData:
-  DATABASE_URL:"postgresql://neondb_owner:npg_BmXOKrfYq68c@ep-muddy-grass-ahgi8sek-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+  DATABASE_URL: "${DB_URL_SECRET}"
